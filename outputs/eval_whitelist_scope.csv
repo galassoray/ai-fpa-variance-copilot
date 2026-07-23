@@ -1,0 +1,6 @@
+written_as,accepted_by_audit,false_verify_sliced,false_verify_whole_dataset
+1 sig figs  e.g. $2M,False,0.9293,1.0
+2 sig figs  e.g. $1.7M,False,0.5063,0.988
+3 sig figs  e.g. $1.73M,True,0.1073,0.668
+4 sig figs  e.g. $1.730M,True,0.0153,0.142
+"6 sig figs  e.g. $1,730,055",True,0.0033,0.0383

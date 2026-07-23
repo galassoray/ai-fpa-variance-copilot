@@ -1,0 +1,12 @@
+check,status,worst_discrepancy,detail
+1_arr_bridge_ties,PASS,0.0,ending == start+new+exp-con-chu
+2_variance_identity,PASS,0.0,budget + variance == actual
+3_revenue_fav_flag,PASS,0.0,revenue favorable iff actual>budget
+4_expense_fav_flag,PASS,0.0,expense favorable iff actual<budget
+5_pct_variance_safety,PASS,0.0,no inf/NaN where budget>=floor
+6_comp_decomposition_reconciles,PASS,0.01,hc_impact + rate_impact == salary_variance
+7_revenue_decomposition_reconciles,PASS,0.0,volume + price == rev_variance
+8_referential_integrity,PASS,0.0,all fact keys in dimensions
+9_salary_ties_to_headcount,PASS,0.0,GL salary == HC x comp/12
+10_rollup_ties_to_lines,PASS,0.0,company variance == sum of line variances
+11_operating_income_identity,PASS,0.0,OI == revenue - cogs - opex

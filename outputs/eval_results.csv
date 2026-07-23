@@ -1,0 +1,7 @@
+scenario,behaviour,status,source,attempts,violations_caught_pre,fabricated_in_output,audit_passed
+month_2025-06-01,well_behaved,accepted,model,1,0,0,True
+month_2025-07-01,transient_bad,accepted,model,2,1,0,True
+month_2025-09-01,persistent_bad,fallback,injection,2,2,0,True
+month_2025-11-01,well_behaved,accepted,model,1,0,0,True
+month_2025-12-01,transient_bad,accepted,model,2,1,0,True
+insufficient_2099,n/a,refused,refusal,0,0,0,True

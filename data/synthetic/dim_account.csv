@@ -1,0 +1,27 @@
+account_id,account_name,department_id,account_category,statement_line,favorable_direction,is_revenue,is_cogs,is_opex,normal_sign,is_expense,oi_sign
+REV_SUB,Subscription Revenue,CORP,Subscription,Revenue,higher,1,0,0,1,0,1
+REV_SVC,Services Revenue,CORP,Services,Revenue,higher,1,0,0,1,0,1
+COGS_HOST,Hosting / Infrastructure,CORP,Infrastructure,Cost of Revenue,lower,0,1,0,1,1,-1
+COGS_SUPPORT,Customer Support COGS,CORP,Support,Cost of Revenue,lower,0,1,0,1,1,-1
+COGS_PAY,Payment Processing,CORP,Payments,Cost of Revenue,lower,0,1,0,1,1,-1
+SM_SAL,Salaries,SM,Personnel,Operating Expenses,lower,0,0,1,1,1,-1
+SM_COMM,Commissions,SM,Personnel,Operating Expenses,lower,0,0,1,1,1,-1
+SM_MKT,Paid Marketing,SM,Marketing,Operating Expenses,lower,0,0,1,1,1,-1
+SM_EVENTS,Events,SM,Marketing,Operating Expenses,lower,0,0,1,1,1,-1
+SM_SW,Sales Software,SM,Software,Operating Expenses,lower,0,0,1,1,1,-1
+SM_TE,Travel & Entertainment,SM,Travel,Operating Expenses,lower,0,0,1,1,1,-1
+RND_SAL,Salaries,RND,Personnel,Operating Expenses,lower,0,0,1,1,1,-1
+RND_CONTRACT,Contractors,RND,Contractors,Operating Expenses,lower,0,0,1,1,1,-1
+RND_CLOUD,Cloud Development Tools,RND,Software,Operating Expenses,lower,0,0,1,1,1,-1
+RND_SW,Software,RND,Software,Operating Expenses,lower,0,0,1,1,1,-1
+RND_RECRUIT,Recruiting,RND,Recruiting,Operating Expenses,lower,0,0,1,1,1,-1
+GA_SAL,Salaries,GA,Personnel,Operating Expenses,lower,0,0,1,1,1,-1
+GA_LEGAL,Legal & Professional Fees,GA,Legal & Professional,Operating Expenses,lower,0,0,1,1,1,-1
+GA_SW,Accounting / Finance Software,GA,Software,Operating Expenses,lower,0,0,1,1,1,-1
+GA_INS,Insurance,GA,Insurance,Operating Expenses,lower,0,0,1,1,1,-1
+GA_FAC,Facilities,GA,Facilities,Operating Expenses,lower,0,0,1,1,1,-1
+GA_ADMIN,Office / Admin,GA,Office,Operating Expenses,lower,0,0,1,1,1,-1
+CS_SAL,Salaries,CS,Personnel,Operating Expenses,lower,0,0,1,1,1,-1
+CS_SW,Customer Success Software,CS,Software,Operating Expenses,lower,0,0,1,1,1,-1
+CS_TRAIN,Training / Enablement,CS,Training,Operating Expenses,lower,0,0,1,1,1,-1
+CS_TE,Travel & Entertainment,CS,Travel,Operating Expenses,lower,0,0,1,1,1,-1

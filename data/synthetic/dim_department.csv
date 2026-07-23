@@ -1,0 +1,6 @@
+department_id,department_name,department_group
+CORP,Corporate / Company,Company
+SM,Sales & Marketing,Go-To-Market
+RND,Research & Development,Product
+GA,General & Administrative,Operations
+CS,Customer Success,Go-To-Market
