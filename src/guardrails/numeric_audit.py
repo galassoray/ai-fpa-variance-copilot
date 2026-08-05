@@ -33,11 +33,29 @@ _SUFFIX = {
 }
 # currency / magnitude: optional $, grouped or plain digits, optional decimals,
 # optional magnitude suffix word/letter.
-_NUM = r"\$?\s?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|\$?\s?-?\d+(?:\.\d+)?"
+# The minus may sit EITHER side of the currency symbol. "-$793K" is the
+# conventional finance form and is what a model writes unprompted; "$-793K" is
+# what naive f-string formatting produces. Both must parse to -793000. Matching
+# only the latter made the audit sign-blind to the common form: "-$793K" was
+# read as +793,000, so a figure with the sign flipped could be VERIFIED against
+# the computed magnitude. A sign error on a variance is a material error -- it
+# inverts favourable and unfavourable -- so it has to be caught, not tolerated.
+_NUM = (r"-?\$?\s?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+        r"|-?\$?\s?-?\d+(?:\.\d+)?")
+# Accounting parentheses mean NEGATIVE: ($793K) is -793,000, and (30.0%) is
+# -30%. This is the house convention in the UI and on every audited statement,
+# so a model that has seen finance writing produces it unprompted. Without the
+# optional (?P<open>\() / (?P<close>\)) groups the audit read "($793K)" as
+# +793,000 -- the same sign-blindness as the "-$" case above, and the same
+# consequence: a figure with inverted favourability verifying green against the
+# computed magnitude.
 _MONEY_RE = re.compile(
-    rf"(?P<num>{_NUM})\s?(?P<suffix>thousand|million|billion|mm|bn|[kKmMbB])?",
+    rf"(?P<open>\()?(?P<num>{_NUM})\s?"
+    rf"(?P<suffix>thousand|million|billion|mm|bn|[kKmMbB])?(?P<close>\))?",
 )
-_PCT_RE = re.compile(rf"(?P<num>-?\d+(?:\.\d+)?)\s?(?:%|percent|percentage points|pts|ppt)")
+_PCT_RE = re.compile(
+    r"(?P<open>\()?(?P<num>-?\d+(?:\.\d+)?)\s?"
+    r"(?:%|percent|percentage points|pts|ppt)(?P<close>\))?")
 
 
 @dataclass
@@ -86,6 +104,11 @@ def extract_mentions(text: str) -> list:
     for m in _PCT_RE.finditer(text):
         raw = m.group("num")
         val = float(raw) / 100.0
+        # A MATCHED pair of parentheses means negative. Require both sides, so
+        # an ordinary parenthetical -- "margin fell (down from 81.0%)" -- is not
+        # misread as a negative.
+        if m.group("open") and m.group("close"):
+            val = -abs(val)
         lsd = _lsd_from_literal(raw, 1.0) / 100.0
         mentions.append(Mention(m.group(0).strip(), val, "percent", lsd))
         spans.append((m.start(), m.end()))
@@ -98,11 +121,21 @@ def extract_mentions(text: str) -> list:
             continue
         num_raw = m.group("num")
         suffix = m.group("suffix")
+        # Strip the currency symbol/grouping, then fold a sign from EITHER side
+        # of the "$" into the value ("-$793" and "$-793" both -> -793).
         cleaned = num_raw.replace("$", "").replace(",", "").replace(" ", "")
+        negative = cleaned.count("-") % 2 == 1
+        cleaned = cleaned.replace("-", "")
+        # A MATCHED pair of parentheses is the accounting negative: ($793K).
+        # Both sides required, so "(revenue of $2.60M)" stays positive.
+        if m.group("open") and m.group("close"):
+            negative = True
         try:
             base_val = float(cleaned)
         except ValueError:
             continue
+        if negative:
+            base_val = -base_val
         has_dollar = "$" in m.group(0)
         has_suffix = bool(suffix)
         has_group = "," in num_raw

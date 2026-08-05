@@ -163,3 +163,119 @@ choice & why → tradeoff → production note.
 - Choice & why: (C). A figure whose rounding window swallows a large share of the computed range cannot be meaningfully checked, so blessing it would be a rubber stamp. `MAX_REL_TOL = 0.005` admits 3+ significant figures and rejects 1–2; the deterministic narrative and both model prompts now write at 3+ ("$2.60M", "$247.1K"); the adversarial eval now includes coarse-precision cases so the catch rate is honest.
 - Tradeoff accepted: a legitimate "$2M" is rejected — the model must write "$2.04M". Slightly stiffer prose in exchange for a claim that survives scrutiny. Residual, stated plainly: at 3 significant figures a fabricated figure still has ~10.7% chance of coincidentally matching within the sliced whitelist. The next hardening step is label-anchored verification (check a figure only against values whose label matches the entity named beside it), which would collapse that residual; it is not built yet.
 - Revert path: set `max_rel_tol=None` in `numeric_audit.audit` to restore the previous behaviour.
+
+---
+
+## Post-deployment review -- display integrity and sign handling
+
+### Decision: negatives follow the accounting convention, ($793K)
+- Context: the UI rendered operating income as "$-793K" -- the naive f"${x:,.0f}",
+  which glues the minus between the currency symbol and the digits. It is the
+  first thing visible on load and the most common formatting tell in a finance UI.
+- Options considered: (A) leave it; (B) "-$793K"; (C) parentheses, "($793K)".
+- Choice & why: (C), for dollars and percentages alike. Parentheses are what a
+  P&L, a variance pack and every audited statement use, so a finance reader
+  parses them without thinking. A house convention applied inconsistently is
+  worse than either convention applied consistently.
+- Tradeoff accepted: one branch in each formatter, plus a parens=False fallback
+  for contexts where parentheses read badly. Negative zero is collapsed to "$0"
+  so a rounding artifact never renders as "-$0".
+
+### Decision: the audit parses signs itself; it does not inherit them from the UI
+- Context: found while making the parentheses change. The audit's money regex
+  accepted a minus only AFTER the "$", so "-$793K" -- the conventional form a
+  model writes unprompted -- parsed as +793,000. Adopting parentheses in the UI
+  would have widened the same hole: "($793K)" also parsed as positive.
+- Why it matters: a sign error on a variance inverts favourable and
+  unfavourable. Because the fact pack deliberately exposes most variances in
+  both signs, a sign-flipped figure would have verified GREEN against the
+  computed magnitude. That is a material error wearing a verified badge.
+- Choice & why: the audit now folds a sign from either side of the "$" and
+  treats a MATCHED pair of parentheses as negative, for dollars and percentages.
+  A matched pair is required so ordinary prose -- "(revenue of $2.60M" -- is not
+  misread.
+- Design note worth saying out loud: the display formatter and the audit's
+  parser are deliberately SEPARATE functions. That is why the UI could adopt a
+  house convention without changing what the guardrail understands, and why the
+  guardrail needed its own explicit fix rather than inheriting one. Presentation
+  and validation drifting apart silently is the failure mode this avoids.
+- Residual, stated plainly: this makes the audit READ signs correctly; it does
+  not make it sign-strict. Most variances appear in the whitelist in both signs
+  by design ("$113.3K unfavorable" writes the magnitude and lets the word carry
+  direction), so flipping those is not fabrication by this whitelist's
+  definition. Sign strictness in the general case needs label-anchored
+  verification, already logged as the next hardening step. The new
+  sign_flipped_dollar adversarial case targets a decomposition term that exists
+  in one sign only, which is where a flip is detectable today.
+- Regression guards: tests/test_formatting_and_signs.py pins both notations,
+  parenthesised negatives, and the false-positive cases (years, bare ratios,
+  ordinary parentheses). Suite 26 -> 61 tests.
+
+### Decision: a goodness-of-fit is never rounded up to a perfect 1.00
+- Context: the forecast page printed "Fit (R2): 1.00". The true value is 0.9996.
+- Choice & why: three decimals, with anything in [0.999, 1) rendering as
+  "0.999+". In a tool whose claim is that figures are precise and checked,
+  rounding a fit UP to perfect is the wrong thing to be caught doing.
+- Note: this is a display fix. Why R2 is 0.9996 is a data-model question,
+  handled separately.
+
+### Decision: chart height is derived from row count
+- Context: the OI-impact chart plotted all 8 drivers but at a fixed 300px Vega
+  thinned the overlapping category labels, so 8 bars carried 4 labels and one was
+  clipped to "Services Revenue...". The chart appeared to disagree with the
+  table directly above it.
+- Choice & why: height = max(240, 34 x rows), labelOverlap=False,
+  labelLimit=260. Every driver in the table gets a labelled bar.
+- Tradeoff accepted: the chart grows if the driver count is raised above 8.
+
+### Decision: bookings seasonality is a Scenario input, defaulted to zero
+- Context: trailing-12 revenue fits a straight line at R2 = 0.9996. The cause is
+  structural: revenue is derived as ending ARR / 12, and ARR is a STOCK. Noise on
+  the FLOWS (~3% of ~$500K of new ARR) is diluted ~60:1 against a $26M base, so
+  it moves revenue ~0.06%. High R2 on subscription revenue is realistic -- that
+  smoothness is the point of the model -- but a fit that round invites the
+  question of whether the data was generated on a line.
+- Options considered: (A) raise flow noise -- would need ~60x, implying a 180%
+  standard deviation on monthly bookings; fixes the chart by breaking the
+  company. (B) recognition noise so GL revenue != ARR/12. Rejected: the revenue
+  decomposition computes its own rev = ARR/12 and never reads the GL, so check #7
+  would still pass -- but the decomposition would then explain a DIFFERENT
+  revenue number than the P&L shows. "Does your driver decomposition tie to your
+  P&L?" would become "no." Viable only with a third timing term and a twelfth
+  check; deferred. (C) seasonality on the ARR flows.
+- Choice & why: (C). Revenue stays exactly ARR/12, so the bridge closes, the
+  volume/price decomposition ties, and all 11 checks pass with nothing downstream
+  changed. Applied to budget, actual and forecast alike -- a planner plans for
+  the Q4 push, so seasonality must not masquerade as variance.
+- Measured at 0.25/0.30: R2 0.9996 -> 0.9690; MoM growth 0.99-1.28% ->
+  0.29-1.75%; FY2025 miss unchanged at -5.3%; ending ARR $30.17M -> $30.23M;
+  checks 11/11.
+- Default & why: 0.0, reproducing the canonical dataset bit-for-bit. Turning it
+  on is a data-model change requiring its own decision, not a side effect of a
+  UI fix.
+
+### Decision: FY2024 gets a small, opex-only, two-sided story -- off by default
+- Context: FY2024 carried no story. Actual-vs-budget revenue variance averaged
+  0.16% and every opex line tracked plan, so the first twelve rows of any
+  variance view read "actual == budget, every month". A clean comparison year is
+  defensible, but it spends twelve rows of an interviewer's attention proving the
+  engine has nothing to find.
+- Options considered: (A) leave it clean, answer verbally. (B) a revenue-side
+  FY2024 miss -- rejected: revenue derives from the ARR bridge, so this means the
+  company had a demand problem in 2024 AND 2025, which weakens the FY2025
+  narrative rather than supporting it. (C) a small opex-only story.
+- Choice & why: (C). Each constraint is load-bearing and pinned by a test.
+  Opex-only: FY2024 revenue still tracks plan, which is what makes the FY2025
+  bookings miss land. H2-weighted: H1-2024 stays a clean baseline. Two-sided:
+  every FY2025 driver is unfavourable, so the favourable branch of
+  oi_sign x variance > 0 otherwise goes undemonstrated on a real driver.
+- The stories: R&D recruiting runs hot Jul-Dec 2024 as the company hires ahead of
+  the FY2025 headcount ramp already in fact_headcount (R&D 38 -> 52, S&M 40 ->
+  58) -- a variance explained by another table in the same dataset. S&M events
+  land under plan Sep-Nov as the user conference is scaled back.
+- Measured at 1.90/0.62: FY24 H1 worst monthly OI impact unchanged at ~$12K; H2
+  ~$17K -> ~$55K; FY24 top driver RND_SAL $16.5K -> RND_RECRUIT $24.0K; FY25 top
+  driver unchanged at $141K; checks 11/11.
+- Implementation note: neither multiplier consumes a random draw and both apply
+  before the existing noise draw, so the RNG stream is untouched.
+- Default & why: 1.0/1.0, reproducing the canonical dataset bit-for-bit.

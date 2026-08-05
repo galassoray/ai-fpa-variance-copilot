@@ -185,10 +185,26 @@ def build_saas_metrics(sc: Scenario, rng):
         s_c = cust_start
         for i, m in enumerate(MONTHS):
             y2025 = (m.year == 2025)
-            base_new = sc.base_new_arr + sc.new_arr_growth * i
-            base_exp = sc.base_expansion_arr + sc.expansion_arr_growth * i
+            # Seasonal shape on the FLOWS. Applied to budget, actual and
+            # forecast alike, because a planner plans for the Q4 push -- if it
+            # were applied to actuals only, seasonality would masquerade as
+            # variance and swamp the engineered story. Cosine peaks in December
+            # and troughs in June; churn clusters on the January and July
+            # renewal dates. At amplitude 0.0 both factors are exactly 1.0, so
+            # the baseline dataset is untouched.
+            season = 1.0
+            churn_season = 1.0
+            if sc.bookings_seasonality:
+                season = 1.0 + sc.bookings_seasonality * np.cos(
+                    2 * np.pi * (m.month - 12) / 12)
+            if sc.churn_seasonality:
+                churn_season = 1.0 + sc.churn_seasonality * (
+                    1.0 if m.month in (1, 7) else -0.25)
+
+            base_new = (sc.base_new_arr + sc.new_arr_growth * i) * season
+            base_exp = (sc.base_expansion_arr + sc.expansion_arr_growth * i) * season
             base_con = sc.base_contraction_arr + sc.contraction_arr_growth * i
-            base_chu = sc.base_churned_arr + sc.churned_arr_growth * i
+            base_chu = (sc.base_churned_arr + sc.churned_arr_growth * i) * churn_season
             base_new_c = sc.base_new_customers
             base_chu_c = sc.base_churned_customers
 
@@ -295,6 +311,12 @@ def build_facts(sc: Scenario, rng, dim_account, headcount, saas):
                 if y2025:
                     mkt *= sc.actual_marketing_mult
                     comm *= sc.actual_commission_mult
+                # FY2024 story: user conference scaled back in the autumn, so
+                # events land UNDER plan -- the one favourable driver in the
+                # dataset. Applied before the noise draw so the draw order (and
+                # therefore the baseline at multiplier 1.0) is unchanged.
+                if m.year == 2024 and m.month in (9, 10, 11):
+                    events *= sc.actual_fy24_events_mult
                 mkt *= (1 + rng.normal(0, 0.03)); events *= (1 + rng.normal(0, 0.05))
             elif scen_name == "forecast" and y2025:
                 mkt *= sc.forecast_marketing_mult
@@ -313,6 +335,12 @@ def build_facts(sc: Scenario, rng, dim_account, headcount, saas):
             if scen_name == "actual":
                 if y2025:
                     contract *= sc.actual_contractors_mult
+                # FY2024 story: agency fees run hot in H2 as the company hires
+                # ahead of the FY2025 headcount ramp already in fact_headcount
+                # (R&D 38 -> 52, S&M 40 -> 58). The variance is explained by
+                # another table in the same dataset, which is the point.
+                if m.year == 2024 and m.month >= 7:
+                    recruit *= sc.actual_fy24_recruiting_mult
                 contract *= (1 + rng.normal(0, 0.04)); cloud *= (1 + rng.normal(0, 0.03))
             elif scen_name == "forecast" and y2025:
                 contract *= sc.forecast_contractors_mult

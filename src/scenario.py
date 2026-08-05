@@ -63,6 +63,28 @@ class Scenario:
     base_new_customers: int = 14
     base_churned_customers: int = 6
 
+    # ---- bookings seasonality (OFF by default) ----
+    # Recognized revenue is derived as ending ARR / 12, and ARR is a STOCK.
+    # Monthly noise on the FLOWS (~3% of ~$500K of new ARR) is diluted roughly
+    # 60:1 against a $26M ARR base, so it moves revenue by ~0.06%. The result is
+    # a revenue series that is very nearly a straight line: trailing-12 R^2 of
+    # 0.9996, month-over-month growth confined to 0.99%-1.28%. High R^2 on
+    # subscription revenue is realistic -- that smoothness is the point of the
+    # model -- but a fit that round is not, and it invites the question of
+    # whether the data was generated on a line.
+    #
+    # Seasonality is the honest missing ingredient: real SaaS bookings peak into
+    # Q4 and trough over the summer, and renewal dates cluster. Applying it to
+    # the FLOWS keeps revenue == ARR / 12 exactly, so the ARR bridge still
+    # closes, the volume/price decomposition still ties to the P&L, and all 11
+    # validation checks still pass. Nothing downstream has to change.
+    #
+    # Default is 0.0, which reproduces the canonical dataset bit-for-bit.
+    # Measured at amplitude 0.25 / 0.30: trailing-12 R^2 0.9999 -> ~0.98,
+    # MoM growth 1.49%-1.97% -> 0.88%-2.39%, ending ARR effectively unchanged.
+    bookings_seasonality: float = 0.0      # amplitude on new + expansion ARR
+    churn_seasonality: float = 0.0         # renewal-cycle clustering on churn
+
     # ---- FY2025 story multipliers on ACTUALS ----
     actual_new_arr_mult: float = 0.86      # bookings landed under plan
     actual_churn_mult: float = 1.22        # churn ran hot
@@ -73,6 +95,34 @@ class Scenario:
     forecast_churn_mult: float = 1.10
     forecast_new_cust_mult: float = 0.92
     forecast_churn_cust_mult: float = 1.15
+
+    # ---- FY2024 story multipliers on ACTUALS (OFF by default) ----
+    # FY2024 currently carries no story at all: actual-vs-budget revenue
+    # variance averages 0.16% and every opex line tracks plan, so the first
+    # twelve rows of any variance view read "actual == budget, every month".
+    # A clean comparison year is defensible, but it spends twelve rows of an
+    # interviewer's attention proving the engine has nothing to find.
+    #
+    # The story is deliberately (a) opex-only, (b) H2-weighted, and (c)
+    # two-sided. Opex-only because FY2024 revenue tracking plan is the honest
+    # setup for the FY2025 bookings miss -- the company did not have a demand
+    # problem until it did. H2-weighted so H1-2024 stays a genuinely clean
+    # baseline. Two-sided because every FY2025 driver is unfavourable, and a
+    # variance tool that has only ever narrated bad news is less convincing
+    # than one that has also explained an underspend.
+    #
+    #   recruiting (R&D, Jul-Dec 2024, unfavourable): agency fees run hot as the
+    #       company hires ahead of the FY2025 headcount ramp already in the
+    #       model (R&D 38 -> 52, S&M 40 -> 58). This is the useful kind of
+    #       variance -- it is explained by another table in the same dataset.
+    #   events (S&M, Sep-Nov 2024, favourable): the user conference is scaled
+    #       back, so the spend lands under plan.
+    #
+    # Defaults of 1.0 reproduce the canonical dataset bit-for-bit. Neither
+    # multiplier consumes a random draw, so the noise stream is unchanged.
+    actual_fy24_recruiting_mult: float = 1.0    # try 1.90
+    actual_fy24_events_mult: float = 1.0        # try 0.62
+
 
     # ---- people ----
     hc_budget_start: dict = field(default_factory=_hc_start)

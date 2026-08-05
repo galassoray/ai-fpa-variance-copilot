@@ -98,19 +98,49 @@ def eval_results():
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-def money(x, na_str="n/a"):
+def money(x, na_str="n/a", parens=True):
+    """Display-only currency formatter, accounting convention.
+
+    Negatives render as ($793K), not -$793K and certainly not $-793K. The naive
+    f"${x:,.0f}" produces the last of those -- it glues the minus between the
+    currency symbol and the digits, which is the most common formatting tell in
+    a finance UI. Parentheses are what a P&L, a variance pack and every audited
+    statement use, so a finance reader parses them without thinking.
+
+    parens=False falls back to -$793K for the rare context where parentheses
+    read badly (inside an already-parenthesised phrase, for instance).
+
+    Display only. This function's output never reaches the numeric audit, which
+    parses narrative text formatted by narrative/prompt.py::_m. The two
+    formatters are deliberately separate: the UI can adopt a house convention
+    without changing what the guardrail has to understand.
+    """
     if x is None or pd.isna(x):
         return na_str
     ax = abs(x)
     if ax >= 1e6:
-        return f"${x/1e6:,.2f}M"
-    if ax >= 1e3:
-        return f"${x/1e3:,.0f}K"
-    return f"${x:,.0f}"
+        body = f"${ax/1e6:,.2f}M"
+    elif ax >= 1e3:
+        body = f"${ax/1e3:,.0f}K"
+    else:
+        body = f"${ax:,.0f}"
+    if x >= 0:
+        return body
+    return f"({body})" if parens else f"-{body}"
 
 
-def pct(x, na_str="n/a"):
-    return na_str if x is None or pd.isna(x) else f"{x*100:.1f}%"
+def pct(x, na_str="n/a", parens=True):
+    """Percentage formatter, same accounting convention for negatives.
+
+    An operating margin of -30% renders as (30.0%). This is consistent with the
+    dollar formatter and with how a margin line appears on a statement.
+    """
+    if x is None or pd.isna(x):
+        return na_str
+    body = f"{abs(x)*100:.1f}%"
+    if x >= 0:
+        return body
+    return f"({body})" if parens else f"-{body}"
 
 
 def month_label(m):
@@ -176,6 +206,18 @@ def scenario_sidebar() -> Scenario:
             "FY25 bookings vs plan (x)", 0.50, 1.50, float(sc.actual_new_arr_mult), 0.01)
         changes["actual_churn_mult"] = st.slider(
             "FY25 churn vs plan (x)", 0.50, 2.50, float(sc.actual_churn_mult), 0.01)
+        changes["bookings_seasonality"] = st.slider(
+            "Bookings seasonality (amplitude)", 0.00, 0.40,
+            float(sc.bookings_seasonality), 0.05)
+        changes["churn_seasonality"] = st.slider(
+            "Renewal-date clustering (amplitude)", 0.00, 0.40,
+            float(sc.churn_seasonality), 0.05)
+        st.caption(
+            "Seasonality shapes the ARR **flows** — Q4 push, summer trough, "
+            "January/July renewal dates — in plan and actual alike, so it bends "
+            "the revenue curve without masquerading as variance. Revenue stays "
+            "exactly ARR ÷ 12, so the bridge still closes and the volume/price "
+            "decomposition still ties. At 0.00 the dataset is the baseline.")
 
     with st.expander("Spend stories (FY25 actuals)"):
         changes["actual_marketing_mult"] = st.slider(
@@ -188,6 +230,21 @@ def scenario_sidebar() -> Scenario:
             "Hosting cost (x)", 0.80, 2.00, float(sc.actual_hosting_mult), 0.01)
         changes["actual_cs_software_mult"] = st.slider(
             "CS software (x)", 0.50, 2.50, float(sc.actual_cs_software_mult), 0.05)
+
+    with st.expander("Spend stories (FY24 actuals)"):
+        changes["actual_fy24_recruiting_mult"] = st.slider(
+            "R&D recruiting, Jul–Dec (x)", 1.00, 2.50,
+            float(sc.actual_fy24_recruiting_mult), 0.05)
+        changes["actual_fy24_events_mult"] = st.slider(
+            "S&M events, Sep–Nov (x)", 0.40, 1.00,
+            float(sc.actual_fy24_events_mult), 0.02)
+        st.caption(
+            "FY2024 is the comparison year: revenue tracks plan, and the "
+            "variance story sits on the cost side. Recruiting runs hot in H2 as "
+            "the company hires ahead of the FY2025 headcount ramp — a variance "
+            "explained by another table in the same dataset. The events "
+            "underspend is the one **favorable** driver. At 1.00 / 1.00 FY2024 "
+            "carries no story.")
 
     with st.expander("People"):
         st.caption("Headcount and comp are inputs. Salary lines are computed "
@@ -354,13 +411,23 @@ def page_variance():
     cdf = drivers.copy()
     cdf["label"] = cdf["account_name"] + " (" + cdf["department_id"] + ")"
     cdf["Effect"] = cdf["favorable_ab"].map(lambda b: "Favorable" if b else "Unfavorable")
+    # Height is derived from the row count rather than fixed. At a fixed 300px
+    # Vega thins overlapping category labels, so 8 bars rendered with only 4
+    # labels -- which reads as "the chart disagrees with the table above it".
+    # labelLimit stops long account names being clipped to "Services Revenue...".
+    cdf["OI impact"] = cdf["oi_impact_ab"].map(money)
+    chart_height = max(240, 34 * len(cdf))
     st.altair_chart(alt.Chart(cdf).mark_bar().encode(
         x=alt.X("oi_impact_ab:Q", title="OI impact ($)"),
-        y=alt.Y("label:N", sort="-x", title=None),
+        y=alt.Y("label:N", sort="-x", title=None,
+                axis=alt.Axis(labelLimit=260, labelOverlap=False)),
         color=alt.Color("Effect:N", scale=alt.Scale(
             domain=["Favorable", "Unfavorable"], range=["#15803d", "#b91c1c"]),
             legend=alt.Legend(orient="bottom")),
-        tooltip=["label", "oi_impact_ab"]).properties(height=300), width='stretch')
+        tooltip=[alt.Tooltip("label:N", title="Line item"),
+                 alt.Tooltip("OI impact:N"),
+                 alt.Tooltip("Effect:N")]
+    ).properties(height=chart_height), width='stretch')
 
     with st.expander("Department rollup"):
         bd = OUTPUTS["variance_by_department"]
@@ -430,7 +497,12 @@ def page_forecast():
 
     bits = [f"**Method:** {meta['method']}", f"**Assumption:** {meta['assumption']}"]
     if meta["r2"] is not None:
-        bits.append(f"**Fit (R²):** {meta['r2']:.2f} on {meta['fitted_on']} months")
+        # Never round a goodness-of-fit UP to a perfect 1.00. R^2 = 0.9996 is not
+        # 1.00, and in a tool whose whole claim is precision, printing a perfect
+        # fit that isn't one is the wrong kind of rounding to be caught doing.
+        r2 = meta["r2"]
+        r2_txt = "0.999+" if 0.999 <= r2 < 1 else f"{r2:.3f}"
+        bits.append(f"**Fit (R²):** {r2_txt} on {meta['fitted_on']} months")
     st.markdown(" · ".join(bits))
     st.caption("The projection is computed in code from the actuals; the method is an "
                "explicit choice, not a hidden assumption. A trend is a baseline, not a "

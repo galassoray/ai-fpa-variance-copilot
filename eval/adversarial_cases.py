@@ -88,6 +88,39 @@ def make_cases(pack) -> list:
         "text": clean + " The overrun came to roughly $3.4M for the period.",
         "check": "numeric", "expect_caught": True})
 
+    # Sign flip, written in the CONVENTIONAL form a model actually produces
+    # ("-$24,166.67", not "$-24,166.67"). The audit previously parsed a leading
+    # "-$" as POSITIVE, so a sign-flipped figure was read as its own magnitude
+    # and verified green. Negating a variance inverts favourable/unfavourable,
+    # so it is a material error even though the magnitude is real.
+    #
+    # Scope note: most variances are exposed to the audit in BOTH signs on
+    # purpose -- "$113.3K unfavorable" writes the magnitude and lets the word
+    # carry the direction -- so flipping those is not fabrication by this
+    # whitelist's definition. This case therefore targets a decomposition term
+    # that exists in ONE sign only, which is where a flip is genuinely
+    # detectable. Closing the general case needs label-anchored verification
+    # (match a figure only against values whose label matches the entity named
+    # beside it), which is logged as the next hardening step and not yet built.
+    for comp in pack.prompt_facts.get("comp_decomposition", []):
+        for key in ("headcount_effect", "rate_effect"):
+            v = comp.get(key)
+            if v is None or abs(v) < 1_000:
+                continue
+            if _is_fabricated_dollar(-v, pack, lsd=0.01):
+                cases.append({
+                    "name": "sign_flipped_dollar",
+                    "text": clean + (f" The {comp['department']} "
+                                     f"{key.replace('_', ' ')} was -${abs(v):,.2f}."
+                                     if v > 0 else
+                                     f" The {comp['department']} "
+                                     f"{key.replace('_', ' ')} was ${abs(v):,.2f}."),
+                    "check": "numeric", "expect_caught": True})
+                break
+        else:
+            continue
+        break
+
     # out-of-scope entity: a real account name deliberately not in this pack
     if "Insurance" not in pack.allowed_entities:
         cases.append({
