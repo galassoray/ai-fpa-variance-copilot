@@ -279,3 +279,53 @@ choice & why → tradeoff → production note.
 - Implementation note: neither multiplier consumes a random draw and both apply
   before the existing noise draw, so the RNG stream is untouched.
 - Default & why: 1.0/1.0, reproducing the canonical dataset bit-for-bit.
+
+### Decision: the ROI claim is built under the same discipline as the commentary
+- Context: INSTRUCTIONS.md sec.3 requires every tool to prove three things --
+  numeric integrity, guardrails, and quantified ROI. The first two were airtight.
+  The third did not exist anywhere in this repo: no ROI figure in the README, the
+  decision log, the app, or any case study. Two of three pillars, with the missing
+  one being the question a finance hiring manager asks first.
+- Options considered: (A) write a headline number in the README. Rejected, and the
+  reason is the whole point: an unsourced ROI figure would be the one fabricated
+  number in a project whose headline is "zero fabricated numbers", and an
+  interviewer who noticed would be right to discount everything else. (B) measure
+  the manual baseline empirically -- not available, it would require timing real
+  analysts on real close cycles at a real employer, which sec.3 rule 1 forbids.
+  (C) split the claim into what is measured and what is assumed, explicitly.
+- Choice & why: (C). The ROI model mirrors the tool's own architecture.
+  MEASURED, instrumented at run time, not hand-entered: 16 figures computed and
+  self-verified per commentary, 84 words, ~15ms, across 24 months, from 624
+  computed variance rows. ASSUMED, the manual baseline: named, defaulted
+  conservatively, each with a stated basis, exposed as sliders so a reader can
+  move them. DERIVED: a sensitivity range, never a single number.
+- The core term: tie-out cost = (figures cited, MEASURED) x (minutes per figure,
+  ASSUMED). That is the honest shape -- the part that scales is measured, and the
+  per-unit rate is on the table where it can be argued with. A test asserts that
+  doubling the figure count doubles the tie-out saving.
+- Measured result at base assumptions (75 min drafting, 1.5 min/figure tie-out,
+  2 review cycles at 20 min, $85/hr loaded):
+    conservative      67m -> 48m,  19m saved, 28% reduction,  4 hrs/yr
+    base             139m -> 40m,  99m saved, 71% reduction, 20 hrs/yr
+    heavier process  225m -> 45m, 180m saved, 80% reduction, 36 hrs/yr
+- Tradeoff accepted: the headline is a range, not a number, and the conservative
+  case is deliberately unimpressive. That is the cost of a claim that survives a
+  hostile question. A model that wins big under every assumption is not a model,
+  and a reader who can move the sliders and watch the answer shrink will trust
+  the base case more than one who cannot.
+- Explicitly NOT claimed, and stated in the app: not the analysis (deciding why a
+  variance happened is judgment the tool does not do), not the close (getting to a
+  trial balance is upstream), not headcount reduction (the saving is redeployed
+  analyst hours -- a different and more believable claim), and not annualised from
+  one good month (the unit is one commentary, scaled by a cadence the reader sets).
+- Ownership note (sec.4): the baseline assumptions ARE problem framing, which is
+  mine to own. The committed defaults are generic FP&A starting points drawn from
+  no employer's process. They are placeholders to be replaced with figures I can
+  defend from direct experience of what a monthly variance package takes.
+- Regression guards: tests/test_roi.py (9 tests) pins the honesty properties
+  rather than the arithmetic -- that the measured half is really instrumented,
+  that every displayed assumption actually moves the answer (no decorative
+  inputs), that the tool's own cost is never modelled as zero or the reduction as
+  >95%, that the scenarios genuinely diverge, that a conservative reading stays
+  under 50%, that the headline never states a bare number without its condition,
+  and that the report names what is not claimed.

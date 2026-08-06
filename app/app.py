@@ -287,7 +287,7 @@ with st.sidebar:
     st.caption("Code computes every number. The model only explains.")
 
     page = st.radio("View", ["Overview", "Variance", "Forecast", "Commentary",
-                             "Guardrails & Eval", "Decision log"],
+                             "Guardrails & Eval", "ROI", "Decision log"],
                     label_visibility="collapsed")
     SC = scenario_sidebar()
 
@@ -728,6 +728,119 @@ def page_eval():
 
 
 # ===========================================================================
+def page_roi():
+    import roi as ROI
+
+    st.markdown("<div class='eyebrow'>What it's worth &middot; measured where "
+                "measurable, assumed where not</div>", unsafe_allow_html=True)
+    st.markdown("<div class='headline'>Quantified ROI</div>", unsafe_allow_html=True)
+    st.markdown("<hr class='rule'/>", unsafe_allow_html=True)
+
+    st.markdown(
+        "This tool's whole claim is that no decision-facing number is asserted "
+        "without being computed and checked. An unsourced ROI headline would be "
+        "the one fabricated figure in a project whose headline is *zero "
+        "fabricated figures* &mdash; so the ROI is built under the same "
+        "discipline as the commentary.")
+
+    m = ROI.measure(OUTPUTS, TABLES)
+
+    st.markdown("<div class='eyebrow'>Measured &middot; instrumented from this "
+                "run</div>", unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Figures verified", f"{m.figures_per_commentary:.0f}",
+              "per commentary", delta_color="off")
+    c2.metric("Machine time", f"{m.seconds_per_commentary*1000:.0f} ms",
+              "per commentary", delta_color="off")
+    c3.metric("Months measured", f"{m.months_measured}",
+              f"{m.variance_rows_computed:,} variance rows", delta_color="off")
+    c4.metric("Computed values", f"{m.allowed_values_per_fact_pack}",
+              "available per fact pack", delta_color="off")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='eyebrow'>Assumed &middot; the manual baseline</div>",
+                unsafe_allow_html=True)
+    st.markdown(
+        "These are **not measured**, and saying so is the point. Measuring them "
+        "would mean timing real analysts on real close cycles at a real "
+        "employer &mdash; which this project deliberately has no access to. "
+        "Move them and the answer moves.")
+
+    b1, b2 = st.columns(2)
+    with b1:
+        draft = st.slider("Drafting the narrative by hand (min)", 20, 180, 75, 5)
+        tie = st.slider("Tie-out per figure (min)", 0.25, 4.0, 1.5, 0.25)
+        cycles = st.slider("Review cycles", 0.0, 4.0, 2.0, 0.5)
+    with b2:
+        per_cycle = st.slider("Minutes per review cycle", 5, 45, 20, 5)
+        rate = st.slider("Loaded cost per hour ($)", 40, 160, 85, 5)
+        scope = st.slider("Commentaries per close", 1, 20, 1, 1)
+
+    base = ROI.Baseline(drafting_minutes=draft, tie_out_minutes_per_figure=tie,
+                        review_cycles=cycles, minutes_per_review_cycle=per_cycle,
+                        loaded_cost_per_hour=rate, commentaries_per_close=scope)
+    r = ROI.compute_roi(m, base)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='eyebrow'>Derived</div>", unsafe_allow_html=True)
+    d1, d2, d3 = st.columns(3)
+    d1.metric("By hand", f"{r.baseline_minutes:.0f} min", "per commentary",
+              delta_color="off")
+    d2.metric("With the tool", f"{r.tool_minutes:.0f} min",
+              f"{r.pct_reduction*100:.0f}% reduction", delta_color="off")
+    d3.metric("Redeployed", f"{r.annual_hours(base):.0f} hrs/yr",
+              f"≈ {money(r.annual_dollars(base))} at ${rate}/hr", delta_color="off")
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown("<div class='eyebrow'>Where the time goes &mdash; by hand</div>",
+                    unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(
+            {"Step": list(r.baseline_breakdown),
+             "Minutes": [f"{v:.0f}" for v in r.baseline_breakdown.values()]}),
+            hide_index=True, width='stretch')
+    with right:
+        st.markdown("<div class='eyebrow'>&mdash; with the tool</div>",
+                    unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(
+            {"Step": list(r.tool_breakdown),
+             "Minutes": [f"{v:.1f}" for v in r.tool_breakdown.values()]}),
+            hide_index=True, width='stretch')
+
+    st.caption(
+        "The tie-out line is the core of the claim, and it is the only one with "
+        "an honest shape: **measured** figure count × **assumed** rate per "
+        "figure. It scales with something the tool actually produces rather "
+        "than with a guess.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='eyebrow'>Sensitivity &middot; the point estimate is "
+                "not the deliverable</div>", unsafe_allow_html=True)
+    sens = pd.DataFrame(ROI.sensitivity(m))
+    sens.columns = ["Scenario", "By hand (min)", "With tool (min)", "Saved (min)",
+                    "Reduction %", "Hours/yr", "$/yr"]
+    st.dataframe(sens, hide_index=True, width='stretch')
+    st.caption(
+        "Under a skeptic's assumptions — fast analyst, light process — the "
+        "saving is modest. That is deliberate. A model that wins big under "
+        "every assumption is not a model.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("What this deliberately does NOT claim"):
+        st.markdown(
+            "- **Not the analysis.** Deciding whether a salary variance is a "
+            "hiring-timing problem or a forecasting problem is judgment, and "
+            "the tool does not do it.\n"
+            "- **Not the close.** Getting to a trial balance is upstream of "
+            "anything here.\n"
+            "- **Not headcount.** The saving is redeployed analyst hours, "
+            "which is a different and more honest claim — and the one a "
+            "finance leader will actually believe.\n"
+            "- **Not annualised from one good month.** The unit is one "
+            "commentary, scaled explicitly by a cadence you set above.")
+
+
+# ===========================================================================
 def page_decisions():
     st.markdown("<div class='eyebrow'>Why each choice was made</div>", unsafe_allow_html=True)
     st.markdown("<div class='headline'>Decision log</div>", unsafe_allow_html=True)
@@ -749,6 +862,7 @@ PAGES = {
     "Forecast": page_forecast,
     "Commentary": page_commentary,
     "Guardrails & Eval": page_eval,
+    "ROI": page_roi,
     "Decision log": page_decisions,
 }
 PAGES[page]()
