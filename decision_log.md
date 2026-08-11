@@ -329,3 +329,33 @@ choice & why → tradeoff → production note.
   >95%, that the scenarios genuinely diverge, that a conservative reading stays
   under 50%, that the headline never states a bare number without its condition,
   and that the report names what is not claimed.
+
+### Decision: seasonality and the FY2024 story are ON in the baseline
+- Date: turned on after both were built, tested, and verified behind default-off
+  flags. Flipping the defaults is a data-model change, so it was made as its own
+  decision rather than as a side effect of a UI fix.
+- What changed: bookings_seasonality 0.0 -> 0.25, churn_seasonality 0.0 -> 0.30,
+  actual_fy24_recruiting_mult 1.0 -> 1.90, actual_fy24_events_mult 1.0 -> 0.62.
+- Verified after regeneration: 11 validation checks 0 failed; 11/11 golden tests;
+  72 unit tests; eval headline unchanged at 0 fabricated numbers across 5
+  generations and 100% adversarial catch across 40 cases.
+- Effect on the company: trailing-12 revenue R2 0.9996 -> 0.9690; MoM revenue
+  growth 0.99-1.28% -> 0.29-1.75%; Sept-2025 revenue $2.60M -> $2.57M, operating
+  income ($793K) -> ($821K), ending ARR $29.21M -> $28.81M, NRR 92.2% -> 92.1%,
+  GRR 83.4% -> 83.2%; final ending ARR $30.17M -> $30.23M. The FY2025 story is
+  unchanged: revenue still misses plan by -5.3%, and the largest single driver is
+  still ~$141K.
+- What this bought: FY2024 now carries a real, two-sided variance story instead of
+  twelve rows of "actual == budget". November 2024 reads: Recruiting (RND) $23.9K
+  unfavorable; Salaries (RND) $16.5K unfavorable; Events (SM) $14.2K FAVORABLE.
+  That favorable driver is the first real number in the dataset that exercises the
+  favorable branch of oi_sign x variance > 0 -- previously it was proven only by a
+  validation check, never demonstrated on a live line item.
+- Expected artifact, not a bug: FY2024 months before December show TTM NRR and GRR
+  as n/a, because a trailing-twelve-month metric needs twelve months of history.
+- Reversibility: the knobs still fully control the behaviour. Setting all four back
+  to their neutral values reproduces the pre-seasonality company exactly, and two
+  tests (test_zero_amplitude_recovers_the_flat_series,
+  test_neutral_multipliers_recover_the_storyless_year) assert precisely that. The
+  default-pinning tests were inverted rather than deleted, because the default is
+  itself a decision and stays pinned in whichever direction it points.

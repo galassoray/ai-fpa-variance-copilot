@@ -61,21 +61,29 @@ def _fy25(df):
 # ---------------------------------------------------------------------------
 # the default must change nothing
 # ---------------------------------------------------------------------------
-def test_fy24_story_defaults_to_off():
+def test_fy24_story_is_on_in_the_baseline():
+    """The FY2024 story is now part of the canonical dataset (authorized)."""
     sc = SCEN.Scenario()
-    assert sc.actual_fy24_recruiting_mult == 1.0
-    assert sc.actual_fy24_events_mult == 1.0
+    assert sc.actual_fy24_recruiting_mult == pytest.approx(1.90)
+    assert sc.actual_fy24_events_mult == pytest.approx(0.62)
 
 
-def test_neutral_multipliers_are_bit_for_bit_identical_to_the_default():
-    """Explicit 1.0s must not disturb the random draw order."""
+def test_explicit_multipliers_reproduce_the_default():
+    """Passing the baseline multipliers explicitly must equal the default."""
     a = gen.build_dataset(SCEN.Scenario())
-    b = gen.build_dataset(SCEN.Scenario().with_changes(
-        actual_fy24_recruiting_mult=1.0, actual_fy24_events_mult=1.0))
+    b = gen.build_dataset(SCEN.Scenario().with_changes(**STORY))
     for name in ("fact_actuals", "fact_budget", "fact_forecast"):
         left = a[name].select_dtypes("number").to_numpy(dtype=float)
         right = b[name].select_dtypes("number").to_numpy(dtype=float)
-        assert np.array_equal(left, right), f"{name} drifted at neutral multipliers"
+        assert np.array_equal(left, right), f"{name} drifted at explicit multipliers"
+
+
+def test_neutral_multipliers_recover_the_storyless_year():
+    """Turning the story OFF must still work -- the knob is reversible."""
+    off = _detail(actual_fy24_recruiting_mult=1.0, actual_fy24_events_mult=1.0)
+    d = _fy24(off)
+    rec = d[d["account_id"] == "RND_RECRUIT"]
+    assert (rec["var_ab_amount"].abs() < 1_000).all()
 
 
 # ---------------------------------------------------------------------------
@@ -147,9 +155,10 @@ def test_fy25_remains_the_headline():
 
 def test_fy24_story_moves_fy24_but_leaves_fy25_alone():
     """The knob must be year-scoped, not a global spend change."""
-    base, story = _detail(), _detail(**STORY)
-    b25 = _fy25(base)["actual"].to_numpy()
-    s25 = _fy25(story)["actual"].to_numpy()
-    assert np.array_equal(b25, s25), "FY2025 actuals must be untouched"
-    assert not np.array_equal(_fy24(base)["actual"].to_numpy(),
-                              _fy24(story)["actual"].to_numpy())
+    off = _detail(actual_fy24_recruiting_mult=1.0, actual_fy24_events_mult=1.0)
+    on = _detail()
+    assert np.array_equal(_fy25(off)["actual"].to_numpy(),
+                          _fy25(on)["actual"].to_numpy()), \
+        "FY2025 actuals must be untouched by the FY2024 knobs"
+    assert not np.array_equal(_fy24(off)["actual"].to_numpy(),
+                              _fy24(on)["actual"].to_numpy())

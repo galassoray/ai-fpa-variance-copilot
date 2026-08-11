@@ -82,8 +82,8 @@ class Scenario:
     # Default is 0.0, which reproduces the canonical dataset bit-for-bit.
     # Measured at amplitude 0.25 / 0.30: trailing-12 R^2 0.9999 -> ~0.98,
     # MoM growth 1.49%-1.97% -> 0.88%-2.39%, ending ARR effectively unchanged.
-    bookings_seasonality: float = 0.0      # amplitude on new + expansion ARR
-    churn_seasonality: float = 0.0         # renewal-cycle clustering on churn
+    bookings_seasonality: float = 0.25      # amplitude on new + expansion ARR
+    churn_seasonality: float = 0.30         # renewal-cycle clustering on churn
 
     # ---- FY2025 story multipliers on ACTUALS ----
     actual_new_arr_mult: float = 0.86      # bookings landed under plan
@@ -120,8 +120,8 @@ class Scenario:
     #
     # Defaults of 1.0 reproduce the canonical dataset bit-for-bit. Neither
     # multiplier consumes a random draw, so the noise stream is unchanged.
-    actual_fy24_recruiting_mult: float = 1.0    # try 1.90
-    actual_fy24_events_mult: float = 1.0        # try 0.62
+    actual_fy24_recruiting_mult: float = 1.90    # try 1.90
+    actual_fy24_events_mult: float = 0.62        # try 0.62
 
 
     # ---- people ----

@@ -5,6 +5,7 @@ month_2025-06-01,near_miss_dollar,numeric,True,True,True
 month_2025-06-01,fabricated_pct,numeric,True,True,True
 month_2025-06-01,coarse_dollar_1sf,numeric,True,True,True
 month_2025-06-01,coarse_dollar_2sf,numeric,True,True,True
+month_2025-06-01,sign_flipped_dollar,numeric,True,True,True
 month_2025-06-01,out_of_scope_entity,entity,True,True,True
 month_2025-07-01,clean_control,numeric,False,False,True
 month_2025-07-01,fabricated_dollar,numeric,True,True,True
@@ -12,6 +13,7 @@ month_2025-07-01,near_miss_dollar,numeric,True,True,True
 month_2025-07-01,fabricated_pct,numeric,True,True,True
 month_2025-07-01,coarse_dollar_1sf,numeric,True,True,True
 month_2025-07-01,coarse_dollar_2sf,numeric,True,True,True
+month_2025-07-01,sign_flipped_dollar,numeric,True,True,True
 month_2025-07-01,out_of_scope_entity,entity,True,True,True
 month_2025-09-01,clean_control,numeric,False,False,True
 month_2025-09-01,fabricated_dollar,numeric,True,True,True
@@ -19,6 +21,7 @@ month_2025-09-01,near_miss_dollar,numeric,True,True,True
 month_2025-09-01,fabricated_pct,numeric,True,True,True
 month_2025-09-01,coarse_dollar_1sf,numeric,True,True,True
 month_2025-09-01,coarse_dollar_2sf,numeric,True,True,True
+month_2025-09-01,sign_flipped_dollar,numeric,True,True,True
 month_2025-09-01,out_of_scope_entity,entity,True,True,True
 month_2025-11-01,clean_control,numeric,False,False,True
 month_2025-11-01,fabricated_dollar,numeric,True,True,True
@@ -26,6 +29,7 @@ month_2025-11-01,near_miss_dollar,numeric,True,True,True
 month_2025-11-01,fabricated_pct,numeric,True,True,True
 month_2025-11-01,coarse_dollar_1sf,numeric,True,True,True
 month_2025-11-01,coarse_dollar_2sf,numeric,True,True,True
+month_2025-11-01,sign_flipped_dollar,numeric,True,True,True
 month_2025-11-01,out_of_scope_entity,entity,True,True,True
 month_2025-12-01,clean_control,numeric,False,False,True
 month_2025-12-01,fabricated_dollar,numeric,True,True,True
@@ -33,4 +37,5 @@ month_2025-12-01,near_miss_dollar,numeric,True,True,True
 month_2025-12-01,fabricated_pct,numeric,True,True,True
 month_2025-12-01,coarse_dollar_1sf,numeric,True,True,True
 month_2025-12-01,coarse_dollar_2sf,numeric,True,True,True
+month_2025-12-01,sign_flipped_dollar,numeric,True,True,True
 month_2025-12-01,out_of_scope_entity,entity,True,True,True

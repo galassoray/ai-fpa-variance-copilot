@@ -56,22 +56,39 @@ def _r2_of_linear_fit(y):
 # ---------------------------------------------------------------------------
 # the default must change nothing
 # ---------------------------------------------------------------------------
-def test_seasonality_defaults_to_off():
+def test_seasonality_is_on_in_the_baseline():
+    """Seasonality is now part of the canonical dataset (authorized change).
+
+    Was test_seasonality_defaults_to_off. Inverted rather than deleted: the
+    default is a decision, so it stays pinned in whichever direction it points.
+    """
     sc = SCEN.Scenario()
-    assert sc.bookings_seasonality == 0.0
-    assert sc.churn_seasonality == 0.0
+    assert sc.bookings_seasonality == pytest.approx(0.25)
+    assert sc.churn_seasonality == pytest.approx(0.30)
 
 
-def test_zero_amplitude_is_bit_for_bit_identical_to_the_default():
-    """Explicit zeros and the default must produce the same company."""
+def test_explicit_amplitudes_reproduce_the_default():
+    """Passing the baseline amplitudes explicitly must equal the default.
+
+    This is the reversibility guard: it proves the knob still fully controls the
+    behaviour, so setting it back to 0.0 recovers the pre-seasonality company.
+    """
     a = gen.build_dataset(SCEN.Scenario())
     b = gen.build_dataset(SCEN.Scenario().with_changes(
-        bookings_seasonality=0.0, churn_seasonality=0.0))
+        bookings_seasonality=0.25, churn_seasonality=0.30))
     for name in ("fact_actuals", "fact_budget", "fact_forecast",
                  "fact_saas_metrics"):
         left = a[name].select_dtypes("number").to_numpy(dtype=float)
         right = b[name].select_dtypes("number").to_numpy(dtype=float)
-        assert np.array_equal(left, right), f"{name} drifted at zero amplitude"
+        assert np.array_equal(left, right), f"{name} drifted at explicit amplitude"
+
+
+def test_zero_amplitude_recovers_the_flat_series():
+    """Turning seasonality OFF must still work -- the knob is reversible."""
+    flat = gen.build_dataset(SCEN.Scenario().with_changes(
+        bookings_seasonality=0.0, churn_seasonality=0.0))
+    y = _revenue_series(flat).to_numpy()[-12:]
+    assert _r2_of_linear_fit(y) > 0.999
 
 
 # ---------------------------------------------------------------------------
@@ -120,10 +137,9 @@ def test_seasonality_does_not_manufacture_budget_variance():
 
 def test_seasonality_actually_bends_the_revenue_line():
     """The knob must do the thing it exists to do."""
-    base = _revenue_series(gen.build_dataset(SCEN.Scenario())).to_numpy()[-12:]
-    seas = _revenue_series(
-        gen.build_dataset(SCEN.Scenario().with_changes(**SEASONAL))
-    ).to_numpy()[-12:]
+    base = _revenue_series(gen.build_dataset(SCEN.Scenario().with_changes(
+        bookings_seasonality=0.0, churn_seasonality=0.0))).to_numpy()[-12:]
+    seas = _revenue_series(gen.build_dataset(SCEN.Scenario())).to_numpy()[-12:]
     assert _r2_of_linear_fit(base) > 0.999          # the problem
     assert _r2_of_linear_fit(seas) < 0.99           # the fix
     # month-over-month growth should visibly widen
