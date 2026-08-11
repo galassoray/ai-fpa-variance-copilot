@@ -359,3 +359,47 @@ choice & why → tradeoff → production note.
   test_neutral_multipliers_recover_the_storyless_year) assert precisely that. The
   default-pinning tests were inverted rather than deleted, because the default is
   itself a decision and stays pinned in whichever direction it points.
+
+### Decision: seasonality and the FY2024 story are ON in the baseline
+- Context: both were built, tested and verified behind default-off flags. Flipping
+  the defaults is a data-model change, so it was made as its own decision rather
+  than as a side effect of a UI fix.
+- What changed: bookings_seasonality 0.0 -> 0.25, churn_seasonality 0.0 -> 0.30,
+  actual_fy24_recruiting_mult 1.0 -> 1.90, actual_fy24_events_mult 1.0 -> 0.62.
+- Verified after regeneration: 11 validation checks, 0 failed; 11/11 golden tests;
+  72 unit tests; eval headline unchanged at 0 fabricated numbers across 5
+  generations and 100% adversarial catch across 40 cases.
+- Effect: trailing-12 revenue R2 0.9996 -> 0.9690; MoM revenue growth 0.99-1.28%
+  -> 0.29-1.75%; Sept-2025 revenue $2.60M -> $2.57M, operating income ($793K) ->
+  ($821K), ending ARR $29.21M -> $28.81M, NRR 92.2% -> 92.1%, GRR 83.4% -> 83.2%;
+  final ending ARR $30.17M -> $30.23M. The FY2025 story is unchanged: revenue
+  still misses plan by -5.3% and the largest single driver is still ~$141K.
+- What this bought: FY2024 now carries a real, two-sided variance story instead of
+  twelve rows of "actual == budget". November 2024 reads: Recruiting (RND) $23.9K
+  unfavorable; Salaries (RND) $16.5K unfavorable; Events (SM) $14.2K FAVORABLE.
+  That favorable driver is the first real number in the dataset that exercises the
+  favorable branch of oi_sign x variance > 0 -- previously proven only by a
+  validation check, never demonstrated on a live line item.
+- Expected artifact, not a bug: FY2024 months before December show TTM NRR and GRR
+  as n/a, because a trailing-twelve-month metric needs twelve months of history.
+- Reversibility: setting all four knobs back to neutral reproduces the
+  pre-seasonality company exactly, asserted by
+  test_zero_amplitude_recovers_the_flat_series and
+  test_neutral_multipliers_recover_the_storyless_year. The default-pinning tests
+  were inverted rather than deleted, because the default is itself a decision and
+  stays pinned in whichever direction it points.
+
+### Decision: scenario diffs compare floats with a tolerance
+- Context: after the defaults were turned on, the sidebar read "1 input changed"
+  on a fresh load. Streamlit computes a slider's reachable values as min + n*step,
+  so 0.00 + 6*0.05 returns 0.30000000000000004 rather than 0.30. diff_from_default
+  used an exact !=, so it reported a phantom change.
+- Why it mattered more than it looked: that badge is the only indicator telling a
+  viewer whether they are looking at the baseline or a modified scenario. A false
+  positive on load undermines the one control that establishes trust in what is on
+  screen -- and "what did you change?" is not a question to be unable to answer.
+- Choice & why: compare floats with a 1e-9 tolerance, far tighter than any
+  meaningful slider step, and leave non-float comparison exact.
+- Tradeoff accepted: none material. Worth noting as a class of bug -- a display
+  artifact of float accumulation that only appeared once the defaults stopped
+  being whole-number neutral values.
