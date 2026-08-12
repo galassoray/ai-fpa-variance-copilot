@@ -403,3 +403,62 @@ choice & why → tradeoff → production note.
 - Tradeoff accepted: none material. Worth noting as a class of bug -- a display
   artifact of float accumulation that only appeared once the defaults stopped
   being whole-number neutral values.
+
+### Decision: Materialize computed outputs as marts; the agent's SQL queries those, not the raw facts
+- **Context:** The agent needed a SQL tool surface, but the copilot's computation layer is pandas — `run_pipeline.load()` pulls all ten tables with `SELECT *` and every variance, ranking, and decomposition happens in memory. DuckDB was a storage layer, not a computation layer.
+- **Options considered:** (A) Wrap the pandas `outputs` dict in tool functions — zero divergence risk, but no SQL exists anywhere. (B) Write new SQL against `fact_actuals` / `fact_budget` / `dim_account` that recomputes variance. (C) Materialize the already-computed outputs as `out_*` marts and write SQL over those.
+- **Choice & why:** C. Option B would have created a second implementation of the variance math — two sign conventions, two materiality floors, two pct-safety rules — which is exactly what `run_pipeline.py`'s docstring says this codebase does not have. C matches how production finance stacks are actually built: a transformation tier computes marts on a schedule and analysts query the marts. Nobody recomputes revenue recognition in an ad-hoc query. Here the pandas layer *is* the transformation tier and `out_variance_detail` is a mart. SQL may slice, filter, join, rank, and aggregate figures the canonical layer already computed; it may not recompute them.
+- **Tradeoff accepted:** One additional build step, and a mart can go stale — if the pandas layer changes and materialization is not re-run, the agent serves old numbers with a clean audit trail attesting to them. Closed structurally: `build_hash()` fingerprints both the synthetic inputs and the source of every module that produces an output table, and `assert_fresh()` refuses to run against a stale mart. Refusal is the correct outcome, not an inconvenience.
+- **Production note:** In a governed deployment the marts are dbt models on a schedule and the build hash is the dbt run manifest; `read_only=True` becomes a least-privilege database role rather than a connection flag. The security property is identical from the agent's side — there is no code path through which it can write.
+
+---
+
+### Decision: No financial quantity may ever be a tool parameter
+- **Context:** The obvious guardrail is "the model doesn't compute." The non-obvious hole is the model reading `$1.24M` out of step 3's output and retyping it as step 4's argument — which is generating a number, inside a pipeline that otherwise never lets it.
+- **Options considered:** (A) Instruct the model not to do this in the system prompt. (B) Validate at call time that no argument looks like a figure. (C) Make the failure unrepresentable by omitting any float/money parameter type from the registry.
+- **Choice & why:** C. The permitted parameter types are exactly `PeriodParam`, `DimParam`, `EnumParam`, `IntParam`. No money type exists to be misused. Data flows between steps by *reference* — the Phase-2 orchestrator resolves `$STEP_3.rows[0].account_id` from the run ledger and binds it to a validated `DimParam` — so the model sees a symbol, never a figure it must transcribe. `test_no_tool_accepts_a_financial_parameter` asserts the property over the whole registry, so it survives future tools written by someone who has not read the docstring.
+- **Tradeoff accepted:** Any threshold the agent might want ("show me variances over $50K") must be a config constant with a documented value, not a model choice. That is a real capability limit, accepted deliberately.
+
+---
+
+### Decision: EMPTY is a first-class outcome, distinct from error
+- **Context:** A valid query returning zero rows and a malformed query are completely different events, and collapsing them is how agents quietly produce wrong packages.
+- **Choice & why:** The taxonomy is `OK` / `EMPTY` / `INVALID_PARAM` / `TOOL_ERROR`. `EMPTY` is a *retrieved fact* — "no forecast exists for March 2024" — that the agent may narrate. The model view for `EMPTY` explicitly tells the model not to substitute a different query to obtain rows. `INVALID_PARAM` returns the real list of valid alternatives, so a nonexistent department is corrected against the dimension rather than guessed at again.
+- **Tradeoff accepted:** More branches to test. `test_empty_is_distinguished_from_error` pins the behavior.
+
+---
+
+### Decision: Bounds are enforced, never clamped
+- **Context:** `top_n=500` against a `1..10` parameter could be silently clamped to 10.
+- **Choice & why:** Rejected with an error naming the range. Clamping would hide a planning error and let the agent believe it received what it asked for. Silent-coercion rate is an eval metric and its target is zero.
+- **Tradeoff accepted:** One extra replan cycle when the planner overreaches — which is the visible, correct cost.
+
+---
+
+### Decision: Rank on operating-income impact, never raw variance
+- **Context:** `var_ab_amount` is a raw difference. An expense line $200K over budget and a revenue line $200K over budget have identical raw variance and opposite business meaning.
+- **Choice & why:** Every tool returns `oi_impact` (= `oi_sign × var_amount`) alongside the raw figure, and all ranking, decomposition, and share-of-parent logic uses `oi_impact`. This is the highest-risk defect in the build: a tool ranking on `abs(var_ab_amount)` would present an expense overrun as favorable, and *every downstream guardrail would agree*, because the figure itself is correct. The numeric audit verifies that prose matches computation — it cannot verify that the computation asked the right question.
+- **Tradeoff accepted:** None. `test_ranking_uses_oi_impact_not_raw_variance` asserts both the ordering and that at least one over-budget expense line in the top 10 is correctly marked unfavorable.
+
+---
+
+### Decision: Tools return canonical entity names, not dimension ids
+- **Context:** Found during the build. The entity audit whitelists `department_name` ("Sales & Marketing") via `canonical_entity_names()`, not `department_id` ("SM").
+- **Choice & why:** Every tool joins its dimension table and returns the canonical name. A tool returning ids would hand the narrative layer tokens that the narrative layer's own guardrail rejects — the guardrail would fire correctly on data the pipeline itself produced.
+- **Tradeoff accepted:** An extra join per tool, negligible at this scale.
+
+---
+
+### Decision: Comparison is a single enum, not two free scenario arguments
+- **Context:** `get_pl_summary(period, scenario_a, scenario_b)` permits `budget_vs_forecast`, which the marts do not compute.
+- **Choice & why:** A single `comparison` enum of `actual_vs_budget` / `actual_vs_forecast` makes the unsupported pair unrepresentable rather than a runtime failure the agent has to discover and recover from. The default resolves to `actual_vs_budget` and is written into `params_resolved`, so the ledger records what actually ran rather than what was typed.
+- **Tradeoff accepted:** Adding a comparison later means an enum change plus a mart column, not just a new argument.
+
+---
+
+### Decision (amended): the mart fingerprint is content-based, not byte-based
+- Context: `build_hash()` originally digested raw file bytes. Git checks CSVs out with CRLF on Windows and LF on Linux, so an identical logical dataset fingerprinted differently on a laptop versus Streamlit Community Cloud.
+- Why it mattered: the hash is the mart freshness check. A cross-platform mismatch is indistinguishable from real staleness, so the check would have cried wolf on every deployment and been learned-ignored.
+- Fix: line endings are normalized to LF before hashing. Nothing else is normalized -- real content and whitespace changes must still change the digest, because catching a changed computation layer is the entire point.
+- Tradeoff accepted: the fingerprint no longer detects a pure line-ending change. That is the intent, not a gap.
+- How it was found: comparing hashes across two machines (Windows CRLF -> 985fe1e9dfbc3467, Linux LF -> 63674a648a637aa4, identical data). It surfaces no other way. Post-fix both platforms produce 12355fb5db35bbea.
