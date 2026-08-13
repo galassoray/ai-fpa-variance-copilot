@@ -462,3 +462,50 @@ choice & why → tradeoff → production note.
 - Fix: line endings are normalized to LF before hashing. Nothing else is normalized -- real content and whitespace changes must still change the digest, because catching a changed computation layer is the entire point.
 - Tradeoff accepted: the fingerprint no longer detects a pure line-ending change. That is the intent, not a gap.
 - How it was found: comparing hashes across two machines (Windows CRLF -> 985fe1e9dfbc3467, Linux LF -> 63674a648a637aa4, identical data). It surfaces no other way. Post-fix both platforms produce 12355fb5db35bbea.
+### Decision: Plan-then-execute with static validation, not free-form ReAct
+- Context: The agent must sequence a multi-step goal. The default pattern is ReAct, which is maximally adaptive but produces no inspectable artifact before execution begins.
+- Choice & why: Plan-then-execute with bounded replan. The complete plan is inspectable before anything runs, which is what a security review asks for and what makes evaluation tractable: plans can be scored on step recall, step precision, and dependency-order validity against a reference plan, not just outcomes. A plan rejected by static validation costs zero queries and zero tokens, measured with a counting connection rather than asserted.
+- Tradeoff accepted: Less adaptive than ReAct on open-ended goals. Mitigated by symbolic references, which let a fixed plan skeleton bind to data it could not know at plan time.
+
+### Decision: Data moves between steps by reference, never by transcription
+- Context: Phase 1 made financial parameters unrepresentable by type. A behavioral hole remained: a model that reads a figure from step 3 and retypes it into step 4 has generated a number, even though every individual guardrail held.
+- Choice & why: Symbolic references resolved by the orchestrator ($STEP_4.rows[0].member). The model emits a symbol; the orchestrator resolves it from the ledger. The ledger records params_declared and params_resolved separately, so the provenance of every argument is auditable: declared shows the reference, resolved shows CORP, and the pair proves the value came from a prior tool result. $GOAL fields are computed in code from the dimension tables, because date arithmetic is arithmetic and the model has no arithmetic capability.
+- Tradeoff accepted: The reference grammar is deliberately narrow. No expressions, no arithmetic, no slicing. A model wanting something outside it must ask for a tool, not compose one.
+
+### Decision: EMPTY is handled differently for required and optional steps
+- Choice & why: Optional steps log a note and continue. Required steps refuse, with reason code REQUIRED_SECTION_UNAVAILABLE, and the run stops. Continuing and shipping a package with a silent hole is the worse failure, because the reader cannot tell what is missing.
+- Tradeoff accepted: One unavailable section kills the package rather than degrading it. Deliberate: a variance package missing its P&L summary is not partial, it is misleading.
+
+### Decision: Refusals carry reason codes, not free text
+- Context: Refusal recall and false-refusal rate are both eval metrics.
+- Choice & why: A fixed enum. Metrics over free-text reasons are not measurable, so the eval design constrained the implementation rather than the reverse.
+- Tradeoff accepted: New refusal conditions require a new code rather than a new sentence, which is the intended friction.
+
+### Decision: Budget exhaustion is a hard stop that marks the run incomplete
+- Choice & why: Hard stop, BUDGET_EXHAUSTED, and the coverage check then reports every promised section not produced. Never a silent truncation.
+- Tradeoff accepted: A run one step short of completing produces nothing usable. Correct: the alternative is a reader who cannot distinguish "no variance here" from "we ran out of budget before checking."
+
+### Decision: Instrument tokens, cost, and latency before any model exists
+- Choice & why: Phase 2 has no LLM, so every model-cost field is zero, but the fields are populated from the first line anyway. Retrofitted instrumentation measures whatever was convenient after the fact. Specifically: the agent ROI must be measured in different units from the copilot commentary-hours claim (sequencing, retrieval, assembly) or the two stories double-count and collapse under one question. That comparison needs the deterministic baseline numbers, which only exist if captured here.
+- Production note: The same ledger fields are the SOX-relevant audit record.
+
+### Decision: The deterministic baseline is a shipped artifact, not scaffolding
+- Choice & why: It does three jobs permanently. Eval control condition (the Phase 3 planner is scored against this reference plan). Numeric ground truth (whatever the planner produces must match, since both route through the same tools). And the honest comparison: side by side with the agent it answers "is the agent earning its keep?" with measured tokens, latency, and cost rather than an opinion. For a fixed monthly close the pipeline is very likely the right answer; the agent earns its place when the goal space is open.
+- Tradeoff accepted: More engineering than a throwaway harness. run_package.py exists as a CLI so the comparison can be run rather than described.
+
+### Decision: Assert the absence of a model rather than assume it
+- Choice & why: A test scans every import in src/agent and fails on any model client. Enforced, not documented, so it survives Phase 3 adding a planner.
+- Tradeoff accepted: Phase 3 must place the model client deliberately. That is the point.
+
+### Decision: Close the source -> base tables -> marts chain (false-green fix)
+- Context: Found by testing rather than reasoning. Changing a synthetic CSV and re-running materialization produced an identical package: the data change never propagated.
+- Root cause: run_pipeline.ensure_database() builds the DuckDB file only when it is absent, so once it exists the database is a cache that is never invalidated. load() reads that cache, while build_hash fingerprints the CSVs. Marts were computed from stale base tables and stamped with a hash derived from CSVs that were never read.
+- Why it mattered: The freshness check reported current while certifying data it had not seen. A false green is strictly worse than the stale-mart problem the hash exists to prevent, because a check that lies is trusted.
+- Choice & why: csv_fingerprint() is recorded in the database and checked at materialization; the base tables are rebuilt from the CSVs whenever the source moves. The CSVs are the committed source of truth and the .duckdb file is a gitignored build artifact; a cache that never invalidates is the bug.
+- How it was found: Mutating one account actuals and asking whether the package changed. It surfaces no other way: every test in the suite passed while the defect was live.
+
+## OPEN ITEM -- carry into Stage 2 (data-model regeneration)
+
+run_pipeline.ensure_database() still has the un-invalidated cache described above. The fix currently lives inside src/agent/materialize.py, so the AGENT is safe but the COPILOT is not: regenerating the synthetic CSVs leaves the app serving the previous dataset until build_database.py is run manually.
+
+Deliberately not fixed in place, to avoid reopening finished flagship code mid-build. Fold the csv_fingerprint check into run_pipeline.ensure_database() as part of Stage 2, when the data model is being regenerated anyway and the whole chain will be exercised end to end.

@@ -140,6 +140,86 @@ def build_hash() -> str:
     return h.hexdigest()[:16]
 
 
+SOURCE_META = "_agent_source_meta"
+
+
+def csv_fingerprint() -> str:
+    """Fingerprint of the packaged synthetic CSVs alone.
+
+    Separate from ``build_hash`` because it answers a different question: not
+    "are the marts current?" but "do the DuckDB base tables still match the
+    source data they were built from?"
+    """
+    h = hashlib.sha256()
+    if os.path.isdir(SYN):
+        for name in sorted(os.listdir(SYN)):
+            if name.endswith(".csv"):
+                h.update(name.encode())
+                _hash_file(h, os.path.join(SYN, name))
+    return h.hexdigest()[:16]
+
+
+def ensure_base_tables_current(verbose: bool = True) -> bool:
+    """Rebuild the DuckDB base tables if the source CSVs have changed.
+
+    WHY THIS IS NECESSARY -- and it is the subtlest failure in the whole design.
+
+    ``run_pipeline.ensure_database()`` builds the DuckDB file from the CSVs only
+    when the file is *absent*. Once it exists, it is never rebuilt, so the
+    database is a cache that is never invalidated. ``load()`` reads that cache.
+
+    ``build_hash`` fingerprints the CSVs. Put those two facts together and the
+    original implementation had a false-green: edit a CSV, re-run
+    materialization, and the marts get computed from *stale base tables* but
+    stamped with a hash derived from the *new CSVs*. The freshness check would
+    report current while certifying data it had never read.
+
+    A false green is strictly worse than the stale-mart problem the hash exists
+    to prevent -- a check that lies is worse than no check, because it is
+    trusted. So the chain is closed here: the CSVs are the committed source of
+    truth, the ``.duckdb`` file is a gitignored build artifact, and this
+    function invalidates the artifact when its source moves.
+
+    Returns True if a rebuild happened.
+    """
+    want = csv_fingerprint()
+    have = None
+    if os.path.exists(DB):
+        try:
+            con = duckdb.connect(DB, read_only=True)
+            try:
+                row = con.execute(f"SELECT csv_fingerprint FROM {SOURCE_META} LIMIT 1").fetchone()
+                have = row[0] if row else None
+            finally:
+                con.close()
+        except duckdb.Error:
+            have = None
+
+    if have == want:
+        return False
+
+    import build_database as bdb
+    import run_pipeline as rp
+
+    rp.ensure_database()          # generates CSVs then builds, if nothing exists yet
+    if os.path.exists(DB) and have != want:
+        if verbose:
+            reason = "no source fingerprint recorded" if have is None else \
+                     f"source changed ({have} -> {want})"
+            print(f"[materialize] rebuilding base tables from CSVs: {reason}")
+        bdb.build()               # deletes and recreates the file from the CSVs
+
+    con = duckdb.connect(DB)
+    try:
+        con.execute(f"CREATE OR REPLACE TABLE {SOURCE_META} "
+                    "(csv_fingerprint VARCHAR, recorded_at_utc TIMESTAMP)")
+        con.execute(f"INSERT INTO {SOURCE_META} VALUES (?, ?)",
+                    [want, datetime.now(timezone.utc).replace(tzinfo=None)])
+    finally:
+        con.close()
+    return True
+
+
 def stored_hash(con: "duckdb.DuckDBPyConnection") -> str | None:
     """Read the hash recorded at the last materialization, or None."""
     try:
@@ -190,8 +270,12 @@ def materialize(outputs: dict | None = None, verbose: bool = True) -> str:
     """
     import run_pipeline as rp  # local import: keeps agent import-light
 
-    rp.ensure_database()
-    if outputs is None:
+    # Close the source->cache->mart chain before reading anything. Without this,
+    # marts can be computed from stale base tables and stamped with a hash
+    # derived from CSVs that were never actually read. See
+    # ensure_base_tables_current for why that false-green matters.
+    rebuilt = ensure_base_tables_current(verbose=verbose)
+    if outputs is None or rebuilt:
         outputs = rp.compute(rp.load())
 
     missing = set(MART_TABLES) - set(outputs)

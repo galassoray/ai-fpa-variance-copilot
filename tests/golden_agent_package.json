@@ -1,0 +1,62 @@
+{
+  "complete": true,
+  "missing_sections": [],
+  "outcome": "COMPLETED",
+  "sections": {
+    "arr_bridge": {
+      "hash": "cbb39f45ef2f79d1",
+      "rows": 1,
+      "tool": "get_arr_bridge"
+    },
+    "compensation_decomposition": {
+      "hash": "68133f2ef9275b19",
+      "rows": 4,
+      "tool": "get_comp_decomposition"
+    },
+    "department_drivers": {
+      "hash": "909e8a1d13e2635a",
+      "rows": 5,
+      "tool": "rank_variance_drivers"
+    },
+    "headcount": {
+      "hash": "e47e49225ee35bce",
+      "rows": 4,
+      "tool": "get_headcount_movement"
+    },
+    "operating_headline": {
+      "hash": "05215e7475fee9e5",
+      "rows": 1,
+      "tool": "get_operating_metrics"
+    },
+    "opex_trend": {
+      "hash": "20474ecdde484e1e",
+      "rows": 9,
+      "tool": "get_trend"
+    },
+    "period_coverage": {
+      "hash": "b440b4edda3ed655",
+      "rows": 24,
+      "tool": "list_periods"
+    },
+    "pl_summary": {
+      "hash": "7935ab483f76be0b",
+      "rows": 3,
+      "tool": "get_pl_summary"
+    },
+    "revenue_decomposition": {
+      "hash": "32b992fd84b890a1",
+      "rows": 1,
+      "tool": "get_revenue_decomposition"
+    },
+    "second_driver_decomposition": {
+      "hash": "260332e57f26cde6",
+      "rows": 5,
+      "tool": "decompose_variance"
+    },
+    "top_driver_decomposition": {
+      "hash": "cd1c63db2aa04a88",
+      "rows": 5,
+      "tool": "decompose_variance"
+    }
+  }
+}
