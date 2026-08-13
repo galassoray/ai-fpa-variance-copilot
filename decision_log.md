@@ -509,3 +509,35 @@ choice & why → tradeoff → production note.
 run_pipeline.ensure_database() still has the un-invalidated cache described above. The fix currently lives inside src/agent/materialize.py, so the AGENT is safe but the COPILOT is not: regenerating the synthetic CSVs leaves the app serving the previous dataset until build_database.py is run manually.
 
 Deliberately not fixed in place, to avoid reopening finished flagship code mid-build. Fold the csv_fingerprint check into run_pipeline.ensure_database() as part of Stage 2, when the data model is being regenerated anyway and the whole chain will be exercised end to end.
+
+### Decision: The model produces a plan and stops; the orchestrator executes
+- Context: The obvious implementation is the native tool-use API -- hand the model the tool schemas and let it loop, calling a tool, seeing the result, calling the next.
+- Choice & why: Rejected. Native tool use puts the model in the driver's seat and the plan exists only in retrospect, as a transcript. Here the model emits ONE artifact, a plan, and stops. That inversion is the architecture: the complete plan is reviewable before any query runs, static validation is a hard barrier between model output and the database, a rejected plan costs zero queries and zero tokens, plans are scoreable against a reference, and replay is exact because execution is deterministic given a plan.
+- Tradeoff accepted: One lost round of adaptivity per run -- the model cannot see step 3's result before committing to step 4. Symbolic references recover most of it; the bounded replan loop handles the rest.
+
+### Decision: The planner test suite runs entirely offline
+- Choice & why: Every planner test uses a scripted client. The barrier between model output and the database is a property of the VALIDATOR, not of the model, so a test that needed a good model to pass would not be testing the barrier. The adversarial fixture set (hallucinated tools, invented departments, monetary parameters, forward references, injected instructions, oversized plans, wrong types) is written as an adversary and each case was verified to fail with a specific message rather than passing vacuously.
+- Tradeoff accepted: Live model behaviour is a measurement, reported from real runs, not a test assertion. The live client is covered up to the network hop with a stubbed SDK: request shape, JSON mode, text extraction, usage accounting, and reasoning-model parameter handling.
+
+### Decision: Symbolic references are type-checked before execution
+- Context: Found by the first live gpt-4.1 run. The model produced: rank_variance_drivers(dimension="statement_line") then decompose_variance(department_id=$STEP_2.rows[0].member). Ranked by statement_line, "member" is "Operating Expenses" -- not a department. The plan passed static validation and aborted at execution.
+- Why it mattered: The plan was GUARANTEED to fail and the barrier waved it through. "Static validation is the barrier" is only worth saying if the barrier catches guaranteed failures.
+- Choice & why: Every tool now declares the semantic type of each field it returns, with rank_variance_drivers typing "member" dynamically from its dimension argument. validate_plan checks that a reference produces the kind of value the target parameter accepts. Undeclared types degrade to the previous behaviour rather than breaking every plan that references them, and a test asserts every tool declares them.
+- The larger consequence: MONEY is a type no parameter accepts, so a reference to a monetary field is now rejected STATICALLY -- including into top_n, the one integer slot a figure could plausibly have reached. Previously it resolved to a float and failed incidentally as "not a valid department" at execution time. This closes the reference-shaped version of the no-figures-as-parameters rule at plan time.
+- Outcome: With the constraint also stated in the planner prompt, gpt-4.1 produced a corrected plan on the first attempt -- and did not merely dodge the error. It kept the statement_line ranking as its own analytical view and bound the decomposition to the department ranking. Type-correct, and it completes.
+
+### Decision: Plan quality is reported by analysis, not by section label
+- Context: The first scoring implementation compared section labels. A live plan produced "top_department_account_decomposition" for what the reference calls "top_driver_decomposition" -- same analysis, different name -- and was scored as missing it.
+- Choice & why: Section labels are planner-chosen, so a label diff over-reports omission. `analysis_coverage` compares (tool, dimension) pairs, which identify what was actually computed independent of naming. The label metric is retained but explicitly demoted in both the docstring and the CLI output. `promises_kept` / `promises_unbacked` are unaffected, since those compare a plan against its own steps.
+- Tradeoff accepted: Two coverage numbers rather than one. Worth it: quoting an inflated omission count in an interview would be a self-inflicted wound.
+- Measured on the live run: analysis_coverage 0.4, step_precision 1.0, zero unbacked promises. The model chose five correct tools and omitted six -- a defensible but thinner package than the deterministic plan. Every tool it chose was right; it simply covered less ground.
+
+### Decision: Provider is selectable, but provider-agnosticism is not claimed
+- Context: The copilot claims a provider-agnostic narrative client, which is fair because a completion call is nearly identical everywhere. Planning is not.
+- Choice & why: OpenAI and Anthropic clients both exist and auto-detect from whichever API key is set, defaulting to gpt-4.1. But prompt adherence, JSON discipline, and failure modes differ enough that a swap is a porting job, not a config change. The eval is run against one configuration, and provider plus model id are recorded in every result so a figure is always attributable to the setup that produced it.
+- Implementation notes: response_format={"type":"json_object"} is used where supported, which removes a class of parse failure -- but the strict parser stays, because JSON mode guarantees well-formed JSON, not a well-formed PLAN. Reasoning models (o1/o3/o4/gpt-5 prefixes) get max_completion_tokens and no temperature, detected by prefix so a new release degrades rather than erroring.
+
+### Decision: Unknown pricing reports "unpriced", never zero
+- Context: The planner captures real token usage so the agent-vs-pipeline cost comparison is measured rather than estimated from character counts.
+- Choice & why: A model with no configured list price reports pricing_known=False and a cost of None. A silent 0.00 would corrupt the exact comparison this module exists to make -- and a cost of zero is the most flattering possible number to fabricate. The price table carries an as-of date and points at the providers' pricing pages, because a cost figure in an interview is only as good as the rate behind it.
+- Tradeoff accepted: The table needs occasional maintenance. Verify gpt-4.1 rates before quoting a cost.

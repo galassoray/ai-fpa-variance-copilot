@@ -444,14 +444,25 @@ def test_orchestrator_refuses_stale_marts(con, monkeypatch):
 # --------------------------------------------------------------------------
 # Phase-2 boundary
 # --------------------------------------------------------------------------
-def test_no_llm_is_reachable_from_the_agent_package():
-    """Phase 2 runs hand-written plans end to end. The execution engine must be
-    provably correct before a model is allowed to author the plans it runs, so
-    the absence of a model is asserted rather than assumed."""
+#: Phase 3 introduces exactly one module permitted to touch a model. Every
+#: other module in src/agent must stay model-free, so that the execution engine
+#: remains provably correct independent of any planner. Widening this set should
+#: require a decision-log entry.
+LLM_ALLOWED_MODULES = {"planner.py"}
+
+
+def test_only_the_planner_may_reach_a_model():
+    """The execution engine must be correct independent of any model.
+
+    Phase 2 asserted that nothing in src/agent imported a model client. Phase 3
+    adds a planner, which necessarily does -- so the assertion narrows rather
+    than disappears: the model client has exactly one home, and the ledger,
+    orchestrator, registry, tools, and materialization stay model-free.
+    """
     banned = ("anthropic", "openai", "llm_client", "generate_commentary")
     agent_dir = os.path.join(SRC, "agent")
     for fname in sorted(os.listdir(agent_dir)):
-        if not fname.endswith(".py"):
+        if not fname.endswith(".py") or fname in LLM_ALLOWED_MODULES:
             continue
         text = open(os.path.join(agent_dir, fname)).read()
         for line in text.splitlines():

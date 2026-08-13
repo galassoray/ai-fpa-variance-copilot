@@ -180,6 +180,16 @@ def validate_plan(plan: Plan, goal_fields: set) -> None:
             problems.append(f"{tag}: missing required parameter(s) {missing}")
 
         for pname, value in s.params.items():
+            # No tool parameter accepts a float. A float in a plan is therefore
+            # prima facie evidence that a figure was emitted where a dimension
+            # member or a reference belonged. Checked here rather than only in
+            # the planner so the property holds for hand-written plans too.
+            if isinstance(value, float):
+                problems.append(
+                    f"{tag}.{pname}: numeric value {value} -- no tool parameter "
+                    "accepts a figure"
+                )
+                continue
             try:
                 ref = parse_reference(value)
             except PlanError as e:
@@ -196,16 +206,86 @@ def validate_plan(plan: Plan, goal_fields: set) -> None:
             else:
                 if ref.step_idx == s.idx:
                     problems.append(f"{tag}.{pname}: step references itself")
-                elif ref.step_idx >= s.idx:
+                elif plan.step(ref.step_idx) is None:
+                    # Checked before the forward-reference test: telling a
+                    # replanning model "forward reference to step 7" when there
+                    # is no step 7 sends it to fix the wrong thing.
+                    problems.append(
+                        f"{tag}.{pname}: references nonexistent step {ref.step_idx} "
+                        f"(plan has steps {sorted(x.idx for x in plan.steps)})"
+                    )
+                elif ref.step_idx > s.idx:
                     problems.append(
                         f"{tag}.{pname}: forward reference to step {ref.step_idx}; "
                         "a step may only reference an earlier step"
                     )
-                elif plan.step(ref.step_idx) is None:
-                    problems.append(f"{tag}.{pname}: references nonexistent step {ref.step_idx}")
+                else:
+                    problems.extend(
+                        _reference_type_problems(plan, s, pname, spec.params[pname], ref)
+                    )
 
     if problems:
         raise PlanError(problems)
+
+
+def _reference_type_problems(plan: "Plan", step: "Step", pname: str,
+                             pspec, ref: "StepRef") -> list:
+    """Check that a reference produces the kind of thing the parameter takes.
+
+    WHY THIS EXISTS
+    ---------------
+    A live planner produced this, and it passed every other check:
+
+        step 2: rank_variance_drivers(dimension="statement_line")
+        step 3: decompose_variance(department_id=$STEP_2.rows[0].member)
+
+    Shape valid, meaning wrong. ``member`` is "Operating Expenses", which is not
+    a department, so the run aborted at step 3 -- a plan that could not possibly
+    have succeeded, waved through by the barrier that exists to stop exactly
+    that. "Static validation is the barrier" is only worth saying if the barrier
+    catches guaranteed failures.
+
+    The larger consequence is fabrication-related. MONEY is a type no parameter
+    accepts, so ``$STEP_3.rows[0].oi_impact`` is now rejected here, statically,
+    with a message saying why -- rather than resolving to a float and failing
+    incidentally as "not a valid department" at execution time. That closes the
+    reference-shaped version of the no-figures-as-parameters rule at plan time.
+
+    Unknown types are permitted rather than rejected: a tool that has not
+    declared its field types degrades to the previous behavior instead of
+    breaking every plan that references it.
+    """
+    from agent.registry import REGISTRY
+
+    tag = f"step {step.idx}"
+    producer = plan.step(ref.step_idx)
+    if producer is None or producer.tool not in REGISTRY:
+        return []
+
+    produced = REGISTRY[producer.tool].output_type(ref.field, producer.params)
+    if produced is None:
+        return []   # undeclared: unknown, not wrong
+
+    accepts = getattr(pspec, "accepts", frozenset())
+    if not accepts:
+        return [
+            f"{tag}.{pname}: '{ref}' -- this parameter takes a literal value, "
+            f"not a reference"
+        ]
+    if produced in accepts:
+        return []
+
+    if produced == "money":
+        return [
+            f"{tag}.{pname}: '{ref}' refers to a monetary field "
+            f"('{ref.field}' of step {ref.step_idx}). No tool parameter accepts "
+            "a figure -- reference a dimension member instead"
+        ]
+    return [
+        f"{tag}.{pname}: '{ref}' produces {produced}, but this parameter takes "
+        f"{' or '.join(sorted(accepts))}. Step {ref.step_idx} was called with "
+        f"{producer.params.get('dimension', producer.params)!r}"
+    ]
 
 
 def resolve_params(step: Step, goal: dict, results: dict) -> dict:

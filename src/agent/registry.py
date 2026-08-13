@@ -114,10 +114,40 @@ class ToolResult:
 # --------------------------------------------------------------------------
 # parameter specifications
 # --------------------------------------------------------------------------
+#: Semantic types for tool *outputs*, so a symbolic reference can be
+#: type-checked before execution rather than discovered wrong at runtime.
+#:
+#: Added after a live planner produced a plan that passed static validation and
+#: was guaranteed to fail: it ranked by `statement_line`, then bound the
+#: resulting `member` ("Operating Expenses") to a `department_id`. Shape was
+#: valid; meaning was not. A barrier that lets a doomed plan through is a
+#: weaker barrier than advertised.
+#:
+#: The more important consequence is fabrication-related: MONEY is a type no
+#: parameter accepts, so `$STEP_3.rows[0].oi_impact` is now rejected *statically*
+#: rather than incidentally failing dimension validation at execution time.
+T_PERIOD = "period"
+T_DEPARTMENT = "department"
+T_ACCOUNT = "account"
+T_STATEMENT_LINE = "statement_line"
+T_ACCOUNT_CATEGORY = "account_category"
+T_MONEY = "money"
+T_COUNT = "count"
+T_RATIO = "ratio"
+T_TEXT = "text"
+T_BOOL = "bool"
+
+
 class ParamSpec:
     """Base. Subclasses validate and normalize one argument."""
 
     json_type = "string"
+
+    #: Output types this parameter will accept via a symbolic reference.
+    #: Empty means "literal only" -- deliberate for enums, whose legal values
+    #: are fixed and known at plan time, so a reference is never needed and
+    #: allowing one only widens the surface.
+    accepts: frozenset = frozenset()
 
     def __init__(self, description: str, required: bool = True, default: Any = None):
         self.description = description
@@ -136,6 +166,7 @@ _MONTH_RE = re.compile(r"^(\d{4})-(\d{2})(?:-(\d{2}))?$")
 
 
 class PeriodParam(ParamSpec):
+    accepts = frozenset({T_PERIOD})
     """A calendar month, validated against dim_date.
 
     Accepts ``YYYY-MM`` and ``YYYY-MM-DD`` and normalizes to the canonical
@@ -169,6 +200,9 @@ class DimParam(ParamSpec):
     def __init__(self, dimension: str, description: str, required: bool = True, default=None):
         super().__init__(description, required, default)
         self.dimension = dimension
+        # Accepts only its own dimension. A department slot takes a department,
+        # never a statement line that happens to be a string too.
+        self.accepts = frozenset({dimension})
 
     def validate(self, value, ctx):
         members = ctx.members(self.dimension)
@@ -203,6 +237,7 @@ class EnumParam(ParamSpec):
 
 
 class IntParam(ParamSpec):
+    accepts = frozenset({T_COUNT})
     """A bounded integer. Bounds are enforced, never coerced.
 
     Clamping an out-of-range value would hide a planning error and let the agent
@@ -283,6 +318,28 @@ class Tool:
     params: dict
     fn: Callable
     returns: str = ""
+    #: field name -> semantic type, or a callable(params) -> dict for tools
+    #: whose output type depends on an argument (rank_variance_drivers.member
+    #: is a department, an account, or a statement line depending on
+    #: `dimension`). Declared per tool because only the tool author knows.
+    field_types: object = None
+
+    def output_type(self, field: str, params: dict) -> str | None:
+        """Semantic type of one returned field, given the step's arguments.
+
+        Returns None when the field is undeclared -- treated as unknown rather
+        than as an error, so adding a tool without types degrades to today's
+        behavior instead of breaking every plan that references it.
+        """
+        ft = self.field_types
+        if ft is None:
+            return None
+        if callable(ft):
+            try:
+                ft = ft(params or {})
+            except Exception:  # noqa: BLE001
+                return None
+        return (ft or {}).get(field)
 
     def json_schema(self) -> dict:
         """Anthropic tool-use schema, generated from the spec.
@@ -311,7 +368,8 @@ class Tool:
 REGISTRY: dict[str, Tool] = {}
 
 
-def tool(name: str, description: str, params: dict, returns: str = ""):
+def tool(name: str, description: str, params: dict, returns: str = "",
+         field_types=None):
     """Register a tool. Static: import-time only, no dynamic registration."""
 
     def deco(fn):
@@ -324,7 +382,7 @@ def tool(name: str, description: str, params: dict, returns: str = ""):
                 )
         if name in REGISTRY:
             raise ValueError(f"tool '{name}' is already registered")
-        REGISTRY[name] = Tool(name, description, params, fn, returns)
+        REGISTRY[name] = Tool(name, description, params, fn, returns, field_types)
         return fn
 
     return deco

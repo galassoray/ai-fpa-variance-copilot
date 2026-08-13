@@ -37,7 +37,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from agent.registry import DimParam, EnumParam, IntParam, PeriodParam, tool
+from agent.registry import (T_ACCOUNT, T_ACCOUNT_CATEGORY, T_BOOL, T_COUNT,
+                            T_DEPARTMENT, T_MONEY, T_PERIOD, T_RATIO,
+                            T_STATEMENT_LINE, T_TEXT, DimParam, EnumParam,
+                            IntParam, PeriodParam, tool)
 from calculations.variance_engine import MATERIALITY_FLOOR
 
 # Comparisons the dataset actually supports. Modeled as a single enum rather
@@ -111,6 +114,8 @@ def _rows(con, sql: str, params: list) -> list:
     ),
     params={},
     returns="month, fiscal_year, quarter, has_actuals, has_budget, has_forecast",
+    field_types={"month": T_PERIOD, "fiscal_year": T_COUNT, "quarter": T_TEXT,
+                 "has_actuals": T_BOOL, "has_budget": T_BOOL, "has_forecast": T_BOOL},
 )
 def list_periods(con):
     return _rows(
@@ -144,6 +149,7 @@ def list_periods(con):
         )
     },
     returns="member id and name",
+    field_types=lambda p: {"member": p.get("dimension"), "name": T_TEXT, "grp": T_TEXT},
 )
 def list_dimensions(con, dimension):
     sql = {
@@ -183,6 +189,9 @@ def list_dimensions(con, dimension):
         "comparison": EnumParam(COMPARISONS, "Which comparison to run. Defaults to actual_vs_budget.", required=False, default="actual_vs_budget"),
     },
     returns="statement_line, actual, base, variance, oi_impact, variance_pct, favorable",
+    field_types={"statement_line": T_STATEMENT_LINE, "actual": T_MONEY, "base": T_MONEY,
+                 "variance": T_MONEY, "oi_impact": T_MONEY,
+                 "variance_pct": T_RATIO, "favorable": T_BOOL},
 )
 def get_pl_summary(con, period, comparison):
     c = _CMP[comparison]
@@ -231,6 +240,12 @@ def get_pl_summary(con, period, comparison):
     ),
     params={"period": PeriodParam("The reporting period.")},
     returns="revenue, cogs, opex, gross_profit, gross_margin, operating_income, operating_margin, opex_pct_revenue, total_headcount, ending_arr, arr_per_head, revenue_per_head",
+    field_types={"month": T_PERIOD, "revenue": T_MONEY, "cogs": T_MONEY, "opex": T_MONEY,
+                 "gross_profit": T_MONEY, "gross_margin": T_RATIO,
+                 "operating_income": T_MONEY, "operating_margin": T_RATIO,
+                 "opex_pct_revenue": T_RATIO, "total_headcount": T_COUNT,
+                 "ending_arr": T_MONEY, "arr_per_head": T_MONEY,
+                 "revenue_per_head": T_MONEY},
 )
 def get_operating_metrics(con, period):
     return _rows(
@@ -269,6 +284,10 @@ def get_operating_metrics(con, period):
         "top_n": IntParam(1, 10, "How many drivers to return.", required=False, default=5),
     },
     returns="rank, member, name, actual, base, variance, oi_impact, share_of_total_oi_impact, favorable",
+    field_types=lambda p: {"rank": T_COUNT, "member": p.get("dimension"), "name": T_TEXT,
+                       "actual": T_MONEY, "base": T_MONEY, "variance": T_MONEY,
+                       "oi_impact": T_MONEY,
+                       "share_of_total_oi_impact": T_RATIO, "favorable": T_BOOL},
 )
 def rank_variance_drivers(con, period, dimension, comparison, top_n):
     c = _CMP[comparison]
@@ -339,6 +358,12 @@ def rank_variance_drivers(con, period, dimension, comparison, top_n):
         "top_n": IntParam(1, 10, "How many accounts to return.", required=False, default=5),
     },
     returns="rank, account_id, account_name, account_category, actual, base, variance, oi_impact, share_of_department_oi_impact, favorable",
+    field_types={"rank": T_COUNT, "account_id": T_ACCOUNT, "account_name": T_TEXT,
+                 "account_category": T_ACCOUNT_CATEGORY,
+                 "statement_line": T_STATEMENT_LINE,
+                 "department_name": T_TEXT, "actual": T_MONEY, "base": T_MONEY,
+                 "variance": T_MONEY, "oi_impact": T_MONEY,
+                 "share_of_department_oi_impact": T_RATIO, "favorable": T_BOOL},
 )
 def decompose_variance(con, period, department_id, comparison, top_n):
     c = _CMP[comparison]
@@ -387,6 +412,11 @@ def decompose_variance(con, period, department_id, comparison, top_n):
         "department_id": DimParam("department", "The department to decompose.", required=False),
     },
     returns="department_id, salary_budget, salary_actual, salary_variance, hc_impact, rate_impact, decomp_residual, favorable",
+    field_types={"month": T_PERIOD, "department_id": T_DEPARTMENT, "department_name": T_TEXT,
+                 "salary_budget": T_MONEY, "salary_actual": T_MONEY,
+                 "salary_variance": T_MONEY, "hc_impact": T_MONEY,
+                 "rate_impact": T_MONEY, "decomp_residual": T_MONEY,
+                 "favorable": T_BOOL},
 )
 def get_comp_decomposition(con, period, department_id):
     sql = """
@@ -418,6 +448,10 @@ def get_comp_decomposition(con, period, department_id):
     ),
     params={"period": PeriodParam("The reporting period.")},
     returns="rev_budget, rev_actual, rev_variance, volume_impact, price_impact, decomp_residual, favorable",
+    field_types={"month": T_PERIOD, "rev_budget": T_MONEY, "rev_actual": T_MONEY,
+                 "rev_variance": T_MONEY, "volume_impact": T_MONEY,
+                 "price_impact": T_MONEY, "decomp_residual": T_MONEY,
+                 "favorable": T_BOOL},
 )
 def get_revenue_decomposition(con, period):
     return _rows(
@@ -448,6 +482,13 @@ def get_revenue_decomposition(con, period):
     ),
     params={"period": PeriodParam("The reporting period.")},
     returns="starting_arr, new_arr, expansion_arr, contraction_arr, churned_arr, ending_arr, bridge_diff, customers_start, customers_end, arpa, nrr, grr, nrr_ttm, grr_ttm",
+    field_types={"month": T_PERIOD, "starting_arr": T_MONEY, "new_arr": T_MONEY,
+                 "expansion_arr": T_MONEY, "contraction_arr": T_MONEY,
+                 "churned_arr": T_MONEY, "ending_arr": T_MONEY,
+                 "bridge_diff": T_MONEY, "customers_start": T_COUNT,
+                 "new_customers": T_COUNT, "churned_customers": T_COUNT,
+                 "customers_end": T_COUNT, "arpa": T_MONEY, "nrr": T_RATIO,
+                 "grr": T_RATIO, "nrr_ttm": T_RATIO, "grr_ttm": T_RATIO},
 )
 def get_arr_bridge(con, period):
     return _rows(
@@ -483,6 +524,10 @@ def get_arr_bridge(con, period):
         "department_id": DimParam("department", "Limit to one department.", required=False),
     },
     returns="department_id, actual_headcount, budget_headcount, forecast_headcount, hc_var_vs_budget, hc_var_vs_forecast",
+    field_types={"month": T_PERIOD, "department_id": T_DEPARTMENT, "department_name": T_TEXT,
+                 "actual_headcount": T_COUNT, "budget_headcount": T_COUNT,
+                 "forecast_headcount": T_COUNT, "hc_var_vs_budget": T_COUNT,
+                 "hc_var_vs_forecast": T_COUNT},
 )
 def get_headcount_movement(con, period, department_id):
     sql = """
@@ -516,6 +561,7 @@ def get_headcount_movement(con, period, department_id):
         "end_period": PeriodParam("Last period in the window, inclusive."),
     },
     returns="month, value",
+    field_types={"month": T_PERIOD, "value": T_MONEY, "metric": T_TEXT},
 )
 def get_trend(con, metric, start_period, end_period):
     if start_period > end_period:
