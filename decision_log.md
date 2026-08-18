@@ -541,3 +541,34 @@ Deliberately not fixed in place, to avoid reopening finished flagship code mid-b
 - Context: The planner captures real token usage so the agent-vs-pipeline cost comparison is measured rather than estimated from character counts.
 - Choice & why: A model with no configured list price reports pricing_known=False and a cost of None. A silent 0.00 would corrupt the exact comparison this module exists to make -- and a cost of zero is the most flattering possible number to fabricate. The price table carries an as-of date and points at the providers' pricing pages, because a cost figure in an interview is only as good as the rate behind it.
 - Tradeoff accepted: The table needs occasional maintenance. Verify gpt-4.1 rates before quoting a cost.
+
+
+### Decision: The run clock stops when the run stops
+- Context: Found in the first live --compare run. The deterministic pipeline reported 9.705 seconds of wall clock for work that takes about 0.05.
+- Root cause: `elapsed_s` was a live property computed on read. The baseline ledger was created first, then read AFTER the 9.5-second planning call, so it absorbed the planner's latency.
+- Why it mattered: a 200x overstatement in the single number the pipeline-vs-agent comparison exists to produce, and it happened to flatter the agent. Measurement code that flatters the thing being measured is worse than no measurement.
+- Choice & why: the orchestrator calls `ledger.finish()` at run end and `elapsed_s` freezes there. A regression test sleeps and asserts the figure does not move.
+
+### Decision: Planning cost is recorded in the run ledger
+- Context: The agent's ledger reported "tokens 0, cost $0.0" for a run that had just called a model. The cost existed only in the comparison table printed beside it.
+- Choice & why: planning is an action with a cost and belongs in the record of the run that incurred it. `record_planning()` captures tokens, cost, latency, model id, and attempt count; `cost_summary()` folds them in. A ledger reporting zero tokens for a model-backed run is lying by omission, and the ledger is the artifact a reviewer is pointed at.
+- Unpriced models propagate `pricing_known: False` rather than a zero, consistent with the planner's own rule.
+
+### Decision: Package sections are rendered by tool, not by label
+- Context: The renderer keyed off section names from the hand-written plan ("operating_headline", "arr_bridge"). A live agent plan named its sections differently, so four of five sections were silently dropped and the package printed only the P&L. It looked empty although every step had succeeded.
+- Options considered: (A) constrain planners to a fixed section vocabulary -- preserves the curated layout but restricts what a planner may produce; (B) a separate generic renderer for agent runs -- two code paths that will drift; (C) key rendering on the tool that produced the section.
+- Choice & why: C. Presentation is a display concern and must not dictate what the planner is allowed to name or produce. A tool-keyed formatter registry means any plan renders, section order follows the plan's own sequence, repeated tools are disambiguated by their varying argument (ranking by department vs statement_line), and a tool added later is displayable the moment it is registered -- via its own formatter if one exists, or the generic table if not. A formatter that raises falls back to the generic table rather than dropping a section that succeeded.
+- Tradeoff accepted: headings are derived rather than authored, so the planner cannot title its own sections. Worth it: the alternative silently discards correct output.
+
+### Decision: The pipeline-vs-agent comparison matches by analysis, not by label
+- Context: The comparison reported "1 section in common" for a run that agreed on four analyses, because it matched on planner-chosen section labels.
+- Choice & why: comparison keys on (tool, dimension, department, metric) -- what was actually computed, independent of naming. Label matching counts a naming coincidence as agreement and identical figures as divergence, in both directions. The output now also lists what each side covered that the other did not, which is the substantive difference between a deterministic plan and an agent-authored one.
+- Consequence worth stating plainly: both routes go through the same tools, so identical figures on shared analyses are the expected result. A divergence there would be an ENGINE BUG, not a difference of planning opinion, and the output says so.
+- Measured on the live plan: 4 analyses in common, 4 identical, pipeline 0.026s and $0 vs agent 9.5s and $0.0071, pipeline covering 7 analyses the agent omitted and the agent adding 1 the pipeline did not.
+
+
+### Decision (amended): the pipeline-vs-agent comparison keys on the FULL resolved parameter set
+- Context: The first analysis-keyed implementation used (tool, dimension, department, metric) and omitted top_n. A live run where the agent asked for top_n=3 and the pipeline for top_n=5 was reported as DIVERGED -- on the one check whose message asserts that a divergence is an engine bug.
+- Why it mattered: a false alarm on a signal that must never cry wolf. Same data, different query: the agent's three rows were the pipeline's first three, and the hashes differed only because the row counts did. A check that reports an engine bug when there is none trains you to ignore it, which is worse than not having it.
+- Choice & why: the key is now (tool, every resolved argument). Divergence then means exactly what the message says -- identical query, different answer. Queries differing only in their arguments are reported in their own category ("same analysis, different arguments: rank_variance_drivers(department) [top_n: 5 vs 3]"), because that is useful information about how deep each side looked, not a discrepancy.
+- Tradeoff accepted: "identical queries" is a stricter and therefore smaller number than the old "analyses in common". It is the honest one.

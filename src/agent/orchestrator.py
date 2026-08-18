@@ -141,6 +141,7 @@ class Orchestrator:
 
         ledger.outcome = outcome
         ledger.refusal_reason = refusal
+        ledger.finish()      # freeze the clock before anything reads it
         return RunResult(ledger, outcome, sections, missing, refusal)
 
     # ------------------------------------------------------------------
@@ -188,6 +189,7 @@ class Orchestrator:
             sections[step.purpose] = {
                 "step": step.idx,
                 "tool": step.tool,
+                "dimension": step.params.get("dimension"),
                 "params": e.params_resolved,
                 "rows": ledger.results.get(step.idx, []),
                 "result_hash": e.result_hash,

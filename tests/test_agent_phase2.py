@@ -377,10 +377,48 @@ def test_cost_is_instrumented_from_the_start(con, goal):
     the agent/pipeline comparison in Phase 6 measures the right things."""
     res = Orchestrator(con).run(variance_package_plan(goal), goal)
     c = res.ledger.cost_summary()
-    assert set(c) == {"steps", "wall_clock_s", "tool_latency_ms",
-                      "tokens_in", "tokens_out", "cost_usd", "replans"}
+    assert set(c) == {"steps", "wall_clock_s", "planning_latency_ms",
+                      "tool_latency_ms", "tokens_in", "tokens_out", "cost_usd",
+                      "pricing_known", "planner_model", "replans"}
     assert c["steps"] == 11 and c["tool_latency_ms"] > 0
     assert c["tokens_in"] == 0 and c["cost_usd"] == 0.0
+    assert c["planning_latency_ms"] == 0.0 and c["planner_model"] == ""
+
+
+def test_the_run_clock_stops_when_the_run_stops(con, goal):
+    """Regression: elapsed_s was a live property that kept ticking after the
+    run ended. In the pipeline-vs-agent comparison the baseline ledger was
+    created first and read AFTER a 9.5s planning call, so the deterministic
+    pipeline reported 9.7 seconds for work that takes 0.05 -- a 200x
+    overstatement in the one number the comparison exists to produce."""
+    import time
+
+    res = Orchestrator(con).run(variance_package_plan(goal), goal)
+    first = res.ledger.cost_summary()["wall_clock_s"]
+    time.sleep(0.25)
+    assert res.ledger.cost_summary()["wall_clock_s"] == first
+    assert first < 2.0, "the deterministic package must not report seconds"
+
+
+def test_planning_cost_is_attributed_to_the_run(con, goal):
+    """A run ledger reporting zero tokens for a run that called a model is
+    lying by omission. Planning is an action with a cost."""
+    res = Orchestrator(con).run(variance_package_plan(goal), goal)
+    res.ledger.record_planning(tokens_in=1800, tokens_out=350, cost_usd=0.0064,
+                               latency_ms=9556.0, model="gpt-4.1", attempts=1)
+    c = res.ledger.cost_summary()
+    assert c["tokens_in"] == 1800 and c["tokens_out"] == 350
+    assert c["cost_usd"] == 0.0064 and c["planner_model"] == "gpt-4.1"
+    assert c["planning_latency_ms"] == 9556.0
+    assert json.loads(res.ledger.to_json())["planning"]["attempts"] == 1
+
+
+def test_unpriced_planning_never_reports_zero_cost(con, goal):
+    res = Orchestrator(con).run(variance_package_plan(goal), goal)
+    res.ledger.record_planning(tokens_in=100, tokens_out=50, cost_usd=None,
+                               pricing_known=False, model="unreleased-model")
+    c = res.ledger.cost_summary()
+    assert c["pricing_known"] is False and c["tokens_in"] == 100
 
 
 def test_every_step_produces_exactly_one_ledger_entry(con, goal):
@@ -574,3 +612,117 @@ def test_csv_fingerprint_is_recorded_and_distinct_from_build_hash(con):
     assert mz.csv_fingerprint() != mz.build_hash()
     row = con.execute(f"SELECT csv_fingerprint FROM {mz.SOURCE_META} LIMIT 1").fetchone()
     assert row and row[0] == mz.csv_fingerprint()
+
+
+# --------------------------------------------------------------------------
+# rendering: keyed by tool, so any plan displays
+# --------------------------------------------------------------------------
+AGENT_PLAN_STEPS = [
+    ("get_pl_summary", {"period": "$GOAL.period"}, "pl_summary"),
+    ("rank_variance_drivers",
+     {"period": "$GOAL.period", "dimension": "department", "top_n": 5},
+     "top_department_drivers"),
+    ("rank_variance_drivers",
+     {"period": "$GOAL.period", "dimension": "statement_line", "top_n": 5},
+     "top_statement_line_drivers"),
+    ("decompose_variance",
+     {"period": "$GOAL.period", "department_id": "$STEP_2.rows[0].member", "top_n": 5},
+     "top_department_account_decomp"),
+    ("get_operating_metrics", {"period": "$GOAL.period"}, "operating_metrics"),
+]
+
+
+def _agent_plan():
+    from agent.plan import Plan, Step
+
+    steps = [Step(i, t, p, purpose=n)
+             for i, (t, p, n) in enumerate(AGENT_PLAN_STEPS, start=1)]
+    return Plan(goal="g", steps=steps, promises=[n for _, _, n in AGENT_PLAN_STEPS])
+
+
+def test_renderer_displays_agent_chosen_section_labels(con, goal):
+    """Regression for a real live run.
+
+    The renderer originally keyed off section names from the hand-written plan
+    ("operating_headline", "arr_bridge"). A live agent plan named its sections
+    differently, so four of five sections were silently dropped and the package
+    printed only the P&L -- it looked empty although every step succeeded.
+    Sections are now rendered by the TOOL that produced them, so a planner is
+    free to name its own sections without affecting display.
+    """
+    from agent.run_package import render
+
+    res = Orchestrator(con).run(_agent_plan(), goal)
+    assert res.complete
+    out = render(res)
+
+    assert "P&L SUMMARY" in out
+    assert "HEADLINE" in out, "operating metrics must render under an agent label"
+    assert "DECOMPOSITION" in out
+    assert "$2,568,827" in out and "($142,611)" in out
+    # Only labels that are not substrings of their own tool name are checked:
+    # "pl_summary" appears inside "get_pl_summary" in the ledger's tool column.
+    for label in ("top_department_drivers", "top_statement_line_drivers",
+                  "top_department_account_decomp"):
+        assert label not in out, "labels are internal; headings come from the tool"
+
+
+def test_renderer_disambiguates_repeated_tools(con, goal):
+    """An agent may legitimately rank twice, by department and by statement
+    line. Two identical headings would make the output ambiguous."""
+    from agent.run_package import render
+
+    out = render(Orchestrator(con).run(_agent_plan(), goal))
+    assert "TOP DRIVERS BY OPERATING-INCOME IMPACT - department" in out
+    assert "TOP DRIVERS BY OPERATING-INCOME IMPACT - statement_line" in out
+
+
+def test_renderer_falls_back_rather_than_losing_a_section(con, goal):
+    """A formatting bug must never discard data that a tool successfully
+    returned. Any exception in a formatter drops to the generic table."""
+    from agent import run_package as rpk
+    from agent.plan import Plan, Step
+
+    plan = Plan(goal="g",
+                steps=[Step(1, "get_arr_bridge", {"period": "$GOAL.period"},
+                            purpose="arr")],
+                promises=["arr"])
+    res = Orchestrator(con).run(plan, goal)
+
+    broken = dict(rpk.RENDERERS)
+    broken["get_arr_bridge"] = ("ARR BRIDGE", lambda rows, params: 1 / 0)
+    original, rpk.RENDERERS = rpk.RENDERERS, broken
+    try:
+        out = rpk.render(res)
+    finally:
+        rpk.RENDERERS = original
+
+    assert "ARR BRIDGE" in out
+    assert "starting_arr" in out, "the generic table must still show the data"
+
+
+def test_renderer_handles_a_tool_with_no_formatter(con, goal):
+    """A tool added later must be displayable the moment it is registered,
+    without editing the renderer."""
+    from agent import run_package as rpk
+    from agent.plan import Plan, Step
+
+    plan = Plan(goal="g",
+                steps=[Step(1, "list_dimensions", {"dimension": "department"},
+                            purpose="dims")],
+                promises=["dims"])
+    out = rpk.render(Orchestrator(con).run(plan, goal))
+    assert "DIMENSION MEMBERS" in out and "Sales & Marketing" in out
+
+
+def test_renderer_shows_planner_cost_when_a_model_was_used(con, goal):
+    from agent.run_package import render
+
+    res = Orchestrator(con).run(variance_package_plan(goal), goal)
+    assert "no model in the loop" in render(res)
+
+    res.ledger.record_planning(tokens_in=1800, tokens_out=350, cost_usd=0.0071,
+                               latency_ms=9500.0, model="gpt-4.1", attempts=1)
+    out = render(res)
+    assert "planner gpt-4.1" in out and "tokens 2150" in out
+    assert "no model in the loop" not in out

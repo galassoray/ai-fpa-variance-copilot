@@ -124,7 +124,12 @@ class RunLedger:
         self.budget = budget
         self.started_at = datetime.now(timezone.utc).isoformat()
         self._t0 = time.perf_counter()
+        self._t_end: float | None = None
         self._entries: list[LedgerEntry] = []
+        #: Planning is an action with a cost, so it is recorded in the ledger
+        #: rather than only in a comparison table. A run ledger that reports
+        #: zero tokens for a run that called a model is lying by omission.
+        self.planning: dict = {}
         self.results: dict[int, list] = {}      # step_idx -> rows
         self.outcome: str = ""
         self.refusal_reason: str = ""
@@ -152,9 +157,22 @@ class RunLedger:
         return None
 
     # -- budget accounting -------------------------------------------------
+    def finish(self) -> None:
+        """Freeze the clock.
+
+        elapsed_s was originally a live property, which meant it kept ticking
+        after the run ended. In the pipeline-vs-agent comparison the baseline
+        ledger was created first and read after the planning call, so the
+        deterministic pipeline reported 9.7 seconds for work that took 0.05 --
+        a 200x overstatement, in the one measurement the comparison exists to
+        make. Freezing at completion is the fix.
+        """
+        if self._t_end is None:
+            self._t_end = time.perf_counter()
+
     @property
     def elapsed_s(self) -> float:
-        return time.perf_counter() - self._t0
+        return (self._t_end or time.perf_counter()) - self._t0
 
     @property
     def steps_used(self) -> int:
@@ -185,6 +203,17 @@ class RunLedger:
             raise BudgetExhausted("max_cost_usd", b.max_cost_usd, round(self.cost_used, 4))
 
     # -- reporting ---------------------------------------------------------
+    def record_planning(self, tokens_in: int = 0, tokens_out: int = 0,
+                        cost_usd: float = 0.0, pricing_known: bool = True,
+                        latency_ms: float = 0.0, model: str = "",
+                        attempts: int = 0) -> None:
+        """Attribute the planning call's cost to this run."""
+        self.planning = {
+            "model": model, "attempts": attempts, "latency_ms": round(latency_ms, 2),
+            "tokens_in": tokens_in, "tokens_out": tokens_out,
+            "cost_usd": cost_usd, "pricing_known": pricing_known,
+        }
+
     def cost_summary(self) -> dict:
         """The ROI inputs. Present even at Phase 2, where the model spend is zero.
 
@@ -193,13 +222,19 @@ class RunLedger:
         retrieval, and assembly -- or the two stories double-count and collapse
         under one question.
         """
+        pl = self.planning or {}
+        tin = sum(e.tokens_in for e in self._entries) + pl.get("tokens_in", 0)
+        tout = sum(e.tokens_out for e in self._entries) + pl.get("tokens_out", 0)
         return {
             "steps": self.steps_used,
             "wall_clock_s": round(self.elapsed_s, 3),
+            "planning_latency_ms": pl.get("latency_ms", 0.0),
             "tool_latency_ms": round(sum(e.latency_ms for e in self._entries), 2),
-            "tokens_in": sum(e.tokens_in for e in self._entries),
-            "tokens_out": sum(e.tokens_out for e in self._entries),
-            "cost_usd": round(self.cost_used, 6),
+            "tokens_in": tin,
+            "tokens_out": tout,
+            "cost_usd": round(self.cost_used + (pl.get("cost_usd") or 0.0), 6),
+            "pricing_known": pl.get("pricing_known", True),
+            "planner_model": pl.get("model", ""),
             "replans": self.replans_used,
         }
 
@@ -212,6 +247,7 @@ class RunLedger:
             "outcome": self.outcome,
             "refusal_reason": self.refusal_reason,
             "notes": list(self.notes),
+            "planning": dict(self.planning),
             "cost": self.cost_summary(),
             "steps": [asdict(e) for e in self._entries],
             "results": {str(k): v for k, v in self.results.items()},

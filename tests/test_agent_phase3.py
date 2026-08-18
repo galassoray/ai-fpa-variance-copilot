@@ -798,3 +798,119 @@ def test_the_live_corrected_plan_validates_and_executes(con, goal):
     run = Orchestrator(con).run(plan, goal)
     assert run.complete
     assert run.ledger.entry(4).params_resolved["department_id"] == "CORP"
+
+
+# --------------------------------------------------------------------------
+# the pipeline-vs-agent comparison must measure the right things
+# --------------------------------------------------------------------------
+def test_comparison_matches_by_analysis_not_by_label(con, goal):
+    """Regression: the comparison keyed on section labels and reported
+    "1 section in common" for a run that agreed on four analyses.
+
+    Labels are planner-chosen, so a label match counts a naming coincidence as
+    agreement and a label mismatch counts identical figures as divergence.
+    Comparing (tool, dimension, department) identifies what was actually
+    computed.
+    """
+    from agent.packages import variance_package_plan
+
+    live = [
+        {"idx": 1, "tool": "get_pl_summary",
+         "params": {"period": "$GOAL.period"}, "purpose": "pl_summary"},
+        {"idx": 2, "tool": "rank_variance_drivers",
+         "params": {"period": "$GOAL.period", "dimension": "department", "top_n": 5},
+         "purpose": "top_department_drivers"},
+        {"idx": 3, "tool": "decompose_variance",
+         "params": {"period": "$GOAL.period",
+                    "department_id": "$STEP_2.rows[0].member", "top_n": 5},
+         "purpose": "top_department_account_decomp"},
+        {"idx": 4, "tool": "get_operating_metrics",
+         "params": {"period": "$GOAL.period"}, "purpose": "operating_metrics"},
+    ]
+    base = Orchestrator(con).run(variance_package_plan(goal), goal)
+    agent = Orchestrator(con).run(
+        parse_plan(plan_json(live, [s["purpose"] for s in live]), "g"), goal)
+
+    def by_analysis(res):
+        out = {}
+        for sec in res.sections.values():
+            p = sec.get("params", {})
+            out[(sec["tool"], p.get("dimension"), p.get("department_id"),
+                 p.get("metric"))] = sec["result_hash"]
+        return out
+
+    b, a = by_analysis(base), by_analysis(agent)
+    shared = set(b) & set(a)
+
+    # Label overlap is 1 (only "pl_summary" is named the same); analysis
+    # overlap is 4. The second number is the true one.
+    label_overlap = set(base.sections) & set(agent.sections)
+    assert len(label_overlap) == 1
+    assert len(shared) == 4, f"expected 4 shared analyses, got {sorted(shared)}"
+
+    # Both routed through the same tools, so every shared analysis must agree.
+    # A divergence here would be an engine bug, not a planning difference.
+    assert all(b[k] == a[k] for k in shared)
+
+
+def test_planning_cost_lands_in_the_run_ledger(con, goal):
+    """A run ledger that reports zero tokens for a run that called a model is
+    lying by omission. The CLI attributes planner usage to the run."""
+    client = Scripted(plan_json(GOOD_STEPS, ["pl_summary"]),
+                      usage={"tokens_in": 1800, "tokens_out": 350,
+                             "cost_usd": 0.0071, "pricing_known": True})
+    pr = Planner(client).propose("g", goal)
+    run = Orchestrator(con).run(pr.plan, goal)
+    run.ledger.record_planning(
+        tokens_in=pr.tokens_in, tokens_out=pr.tokens_out, cost_usd=pr.cost_usd,
+        pricing_known=pr.pricing_known, latency_ms=pr.latency_ms,
+        model=pr.model, attempts=len(pr.attempts))
+
+    c = run.ledger.cost_summary()
+    assert c["tokens_in"] == 1800 and c["cost_usd"] == 0.0071
+    assert c["planner_model"] == "scripted" and c["planning_latency_ms"] >= 0
+
+
+def test_differing_arguments_are_not_reported_as_divergence(con, goal):
+    """Regression for a false alarm on the one check that must never cry wolf.
+
+    A live run where the agent asked for top_n=3 and the pipeline for top_n=5
+    was reported as DIVERGED -- on a check whose message says a divergence is
+    an engine bug. Same data, different query. The comparison now keys on the
+    FULL resolved parameter set, so divergence means what it claims: identical
+    query, different answer.
+    """
+    from agent.ledger import result_hash
+    from agent.packages import variance_package_plan
+
+    base = Orchestrator(con).run(variance_package_plan(goal), goal)
+    shallow = [
+        {"idx": 1, "tool": "rank_variance_drivers",
+         "params": {"period": "$GOAL.period", "dimension": "department", "top_n": 3},
+         "purpose": "drivers"},
+    ]
+    agent = Orchestrator(con).run(
+        parse_plan(plan_json(shallow, ["drivers"]), "g"), goal)
+
+    def index(res):
+        out = {}
+        for sec in res.sections.values():
+            pr = dict(sec.get("params", {}))
+            out[(sec["tool"], tuple(sorted((k, str(v)) for k, v in pr.items())))] = \
+                sec["result_hash"]
+        return out
+
+    bi, ai = index(base), index(agent)
+    exact = set(bi) & set(ai)
+    assert not exact, "different top_n must not be treated as the same query"
+
+    # The underlying data does agree: the agent's 3 rows are the pipeline's first 3.
+    b_rows = next(s["rows"] for s in base.sections.values()
+                  if s["tool"] == "rank_variance_drivers")
+    a_rows = next(s["rows"] for s in agent.sections.values()
+                  if s["tool"] == "rank_variance_drivers")
+    assert len(b_rows) == 5 and len(a_rows) == 3
+    assert b_rows[:3] == a_rows
+    assert result_hash(b_rows) != result_hash(a_rows), (
+        "hashes legitimately differ; that is why the key must include top_n"
+    )
