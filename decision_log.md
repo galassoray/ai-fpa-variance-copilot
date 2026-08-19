@@ -572,3 +572,64 @@ Deliberately not fixed in place, to avoid reopening finished flagship code mid-b
 - Why it mattered: a false alarm on a signal that must never cry wolf. Same data, different query: the agent's three rows were the pipeline's first three, and the hashes differed only because the row counts did. A check that reports an engine bug when there is none trains you to ignore it, which is worse than not having it.
 - Choice & why: the key is now (tool, every resolved argument). Divergence then means exactly what the message says -- identical query, different answer. Queries differing only in their arguments are reported in their own category ("same analysis, different arguments: rank_variance_drivers(department) [top_n: 5 vs 3]"), because that is useful information about how deep each side looked, not a discrepancy.
 - Tradeoff accepted: "identical queries" is a stricter and therefore smaller number than the old "analyses in common". It is the honest one.
+
+
+### Decision: Narration and auditing are orchestrator stages, not tools
+- Context: The obvious design exposes `audit_narrative` as a tool and checks that the agent called it.
+- Choice & why: Rejected. That makes the guardrail depend on the agent's cooperation and turns "did it audit?" into a runtime question. Narration and auditing are not in the registry, so no plan can include them, omit them, or reorder them. The agent plans retrieval; the orchestrator narrates, audits, and gates. **The agent cannot skip what it has no ability to invoke.** A test asserts no such verb exists in the registry and that a plan attempting one is rejected before execution.
+- Related: there is no `publish` verb either. Publication is a human action taken outside the agent (Gate 1). What the narrative stage produces is a *candidate* carrying a verdict.
+
+### Decision: `publishable` is False unless an audit RAN and passed
+- Choice & why: A missing audit and a failed audit are deliberately the same answer. Any other choice makes forgetting to check equivalent to passing. `assert_publishable()` raises rather than returning a flag, so a caller cannot ignore the verdict by not looking at it.
+- Tradeoff accepted: callers must handle an exception rather than read a boolean. That is the intent.
+
+### Decision: The narrative fact pack is built from the ledger, not recomputed
+- Context: `narrative.fact_pack.build_fact_pack` recomputes top drivers, comp decomposition, and revenue decomposition from pandas. It is correct, and the copilot uses it -- but wiring it into the agent would create a SECOND path to every number.
+- Why that matters: two paths can drift. When they do, the audit passes -- because the prose matches the fact pack -- while the prose contradicts the package printed beside it. That is worse than an unaudited narrative, because it ships with a certificate.
+- Choice & why: `agent/facts.py` builds the whitelist from `ledger.results`. Every allowed value traces to a specific step, recorded in `ledger_provenance`. The audit's whitelist and the package's figures are the same numbers by construction rather than by agreement. `_add` is imported from the copilot's fact_pack rather than reimplemented, so the sign/magnitude handling stays in one place -- reimplementing it would be a second path to the *whitelist*, the same mistake one level down.
+- Emergent property worth stating in an interview: **the plan determines the narrative's permitted vocabulary.** If a plan never calls `get_arr_bridge`, no ARR figure enters the whitelist, so the model cannot state one. A thin plan yields a thin, correct commentary rather than a rich, partly invented one. A test proves this with the REAL ARR figure: correct, never retrieved, and rejected -- because provenance, not correctness, is what the audit can verify.
+
+### Decision: Ledger rows are mapped into the copilot's canonical fact schema
+- Context: The prompt and the deterministic injection narrative read a fixed schema (company, revenue_vs_budget, top_drivers, comp_decomposition, arr, headcount). Emitting facts under tool names produced an empty injection narrative.
+- Choice & why: Map into the canonical schema so the agent reuses the flagship's prompt and fallback unchanged rather than growing a parallel copy that would drift. Anything the schema has no slot for still reaches the model under `additional_analysis` -- and still enters the whitelist. Whitelist coverage follows what was retrieved, never what the schema happens to name; otherwise a figure the model legitimately saw would be rejected as fabricated.
+
+### Decision: Driver grains are kept apart
+- Context: The first fact pack ranked department rollups and their own accounts in one list, producing "Corporate / Company $76.1K unfavorable; Subscription Revenue (CORP) $102.2K unfavorable" -- a parent beside its child, reading as two findings when it is one finding at two grains.
+- Choice & why: `top_drivers` carries the rollup grain; `driver_detail_by_account` carries decompositions. A finance reader would catch the original immediately, and an interviewer reading the sample commentary is a finance reader.
+
+### Decision (flagship fix): the magnitude suffix requires a trailing word boundary
+- Context: Found while wiring Phase 4. A fully grounded model draft was rejected. The cause was in the FLAGSHIP audit, not the agent: `(?P<suffix>...|[kKmMbB])?` had no trailing boundary, so the "b" of "below", the "m" of "mainly", and the "k" of "killed" were consumed as magnitude suffixes. "$109,338 below plan" parsed as $109 trillion and was then rejected as fabricated.
+- Blast radius: ordinary FP&A prose. "$X below budget", "$X base salary", "$1,200 monthly", "$43,112 Marketing overspend" -- where Marketing is a department name. Correct model output was being pushed into the deterministic fallback.
+- Why it mattered: the audit was not permissive, it was NOISY, which is the failure mode that quietly makes a guardrail useless -- it never lets anything wrong through, and it never lets anything through either. The measured adversarial catch rate was unaffected (fabrications were still caught), so no existing eval surfaced it.
+- Fix: a `(?![A-Za-z])` lookahead after the suffix group. The regex backtracks the optional suffix and the optional space, so real suffixes ("$2.5M budget", "$5 billion market", "$1.2bn") and both negative forms (`-$793K`, `($793K)`) still parse. 17 parametrized regression cases, and the flagship eval still reports 100% adversarial catch across 40 cases.
+- How it was found: writing a realistic grounded draft and asking why it was rejected. No adversarial test would have surfaced it, because it is a false NEGATIVE on valid input and every eval measured false positives on invalid input.
+
+### Note: what the audit does and does not guarantee
+Guaranteed: every dollar, percent, and count in accepted prose matches a value the agent's tools returned, within MAX_REL_TOL = 0.005. Fabricated figures cannot survive.
+
+Not guaranteed: that the CLAIMS are right. "Opex rose because the team hired ahead of plan" can be causally invented while every figure in it is correct. The audit verifies numbers, not reasoning. That residual is bounded by the human gate in Phase 5, and it is stated plainly rather than papered over -- a design claiming to have automated judgment would be overclaiming, and overclaiming is what an interviewer catches.
+
+
+### Decision: anything the whitelist permits must be visible in the prompt
+- Context: Found in the first live Phase-4 run. The package printed "ending ARR $28,809,278" while the commentary in the same output said "No retention or ARR figures were provided for this period."
+- Root cause: the canonical-schema mapping hand-picked six fields from `get_operating_metrics` and silently dropped `ending_arr`, `cogs`, `gross_profit`, `opex_pct_revenue`, `arr_per_head`, and `revenue_per_head`. Those stayed in the audit whitelist -- so the audit would have accepted them -- but the model could not see them. The model's statement was correct from its own view and a flat contradiction on the page.
+- Why it mattered: a reader comparing the package to the commentary sees the tool disagreeing with itself. Nothing was fabricated and no guardrail failed, which is precisely why it would have survived to an interview.
+- Choice & why: canonical entries are now built from the full whitelisted numeric payload, with schema aliases layered on top rather than replacing it. The invariant is asserted: every whitelisted value must appear somewhere in `prompt_facts`. The single permitted exception is the "(magnitude)" entries -- absolute values derived for negatives so the model may write "$109,338 below plan" instead of "-$109,338" -- and a test pins that this is the *only* gap, so a future omission cannot hide behind it.
+- Related fix: `facts["arr"]` now always carries the schema keys even when a value is None. TTM retention is undefined for the first twelve periods, and dropping a None-valued field removed the key entirely, raising KeyError in the injection narrative for every 2024 period.
+
+
+### Decision: withhold a figure whose sign cannot be read at its grain
+- Context: Found in a live Phase-4 commentary. The model wrote "Operating Expenses exceeded budget by $142,030.94... the largest unfavorable variances were in Corporate / Company ($76,065.38 over budget), Sales & Marketing..., Research & Development...". CORP holds Revenue and Cost of Revenue and NO opex at all, and its raw variance is -76,065 (revenue *under* budget), not +76,065 over.
+- Why the audit did not catch it: it was not a numeric error. $76,065.38 is a real computed magnitude, so it verified. The *claim* was wrong -- wrong sign, wrong category. This is the documented residual (the audit verifies numbers, not reasoning) demonstrated on a real run.
+- Root cause, which IS fixable: a department rollup can span revenue and expense lines whose "bad" directions have opposite signs, so its raw variance has no readable sign. Exposing such a number is an invitation to misread it.
+- Choice & why: at department-rollup grain the raw variance is no longer whitelisted, and the `variance` key is re-pointed at `oi_impact` -- same magnitude, unambiguous sign, and both keys carry the SAME number so there is no wrong one to pick. Every driver also gains an explicit `direction` word ("favorable"/"unfavorable"); the boolean `favorable` had been available and was ignored, and a word beside a signed number is harder to misread than a flag. The fact pack now carries a `how_to_read_drivers` note stating that oi_impact is authoritative and that a department rollup is not necessarily an opex item.
+- Scope: this was introduced by including department rollups in `top_drivers`. The flagship's `build_fact_pack` is account-grain, where the statement line is implied by the account and the raw sign is readable, so the copilot was never affected.
+- Side benefit: it also corrected the deterministic narrative, which had been pairing the raw variance magnitude ($76.1K) with a direction word derived from OI impact -- right direction, wrong magnitude. It now reads $142.6K unfavorable.
+- What this does NOT fix: causal claims. "Opex rose because the team hired ahead of plan" can still be invented with every figure correct. That residual is bounded by the human gate, not by the audit, and saying so plainly is more defensible than implying otherwise.
+
+
+### Decision: the audit trace shows only the parentheses a figure owns
+- Context: A live audit trace rendered "($91,995.40" for the sentence "Sales & Marketing ($91,995.40 over budget)". The money pattern captures an optional "(" before the figure and an optional ")" after it, because a matched pair is the accounting negative; when only one side is present the paren belongs to the surrounding sentence.
+- Scope: display only. The VALUE was already correct in every case, because the negative branch requires both sides -- "($793K)" is -793,000 and "(revenue of $2.60M)" is +2,600,000, both before and after this change.
+- Why it was worth fixing anyway: the audit trace is the signature UI element carried over from the copilot, and it is the thing an interviewer looks at. A dangling parenthesis reads as a broken accounting negative, which invites a question about whether the sign handling is sound -- on the one component whose entire job is to be trustworthy.
+- Tests pin that genuine accounting negatives keep their parentheses, so the hygiene fix cannot quietly become a correctness regression.

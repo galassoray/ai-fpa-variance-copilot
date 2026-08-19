@@ -51,7 +51,16 @@ _NUM = (r"-?\$?\s?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?"
 # computed magnitude.
 _MONEY_RE = re.compile(
     rf"(?P<open>\()?(?P<num>{_NUM})\s?"
-    rf"(?P<suffix>thousand|million|billion|mm|bn|[kKmMbB])?(?P<close>\))?",
+    # The suffix must be a COMPLETE token. Without the trailing boundary, the
+    # "b" of "below", the "m" of "mainly", and the "k" of "kept" were consumed
+    # as magnitude suffixes: "$109,338 below plan" was read as $109 trillion and
+    # then rejected as fabricated. That is a FALSE REJECTION on ordinary FP&A
+    # prose -- "$X below budget", "$X base salary", "$43,112 Marketing overspend"
+    # -- and it pushed correct model output into the deterministic fallback.
+    #
+    # The regex engine backtracks the optional suffix and the optional space, so
+    # a real suffix ("$2.5M budget", "$5 billion market", "$1.2bn") still parses.
+    rf"(?P<suffix>thousand|million|billion|mm|bn|[kKmMbB])?(?![A-Za-z])(?P<close>\))?",
 )
 _PCT_RE = re.compile(
     r"(?P<open>\()?(?P<num>-?\d+(?:\.\d+)?)\s?"
@@ -96,6 +105,28 @@ def _lsd_from_literal(num_str: str, scale: float) -> float:
     return base * scale
 
 
+def _display_text(raw: str) -> str:
+    """Trim parentheses the mention does not actually own.
+
+    The money pattern captures an optional "(" before the figure and an optional
+    ")" after it, because a MATCHED pair is the accounting negative. When only
+    one side is present the paren belongs to the surrounding sentence, not to
+    the figure: "Sales & Marketing ($91,995.40 over budget)" captured
+    "($91,995.40", and "(revenue of $2.60M)" captured "$2.60M)".
+
+    The VALUE is already correct in both cases -- the negative branch requires
+    both sides. This only cleans the string shown in the audit trace, where a
+    dangling paren reads as a broken accounting negative to anyone looking at
+    the screen.
+    """
+    out = raw.strip()
+    if out.startswith("(") and ")" not in out:
+        out = out[1:]
+    if out.endswith(")") and "(" not in out:
+        out = out[:-1]
+    return out.strip()
+
+
 def extract_mentions(text: str) -> list:
     mentions: list = []
     spans: list = []
@@ -110,7 +141,7 @@ def extract_mentions(text: str) -> list:
         if m.group("open") and m.group("close"):
             val = -abs(val)
         lsd = _lsd_from_literal(raw, 1.0) / 100.0
-        mentions.append(Mention(m.group(0).strip(), val, "percent", lsd))
+        mentions.append(Mention(_display_text(m.group(0)), val, "percent", lsd))
         spans.append((m.start(), m.end()))
 
     def overlaps(a, b):
@@ -158,9 +189,9 @@ def extract_mentions(text: str) -> list:
         # absorbed by a near-zero dollar value.
         bare_decimal = has_decimal and not (has_dollar or has_suffix or has_group)
         if bare_decimal and abs(value) < 1:
-            mentions.append(Mention(m.group(0).strip(), value, "percent", lsd))
+            mentions.append(Mention(_display_text(m.group(0)), value, "percent", lsd))
             continue
-        mentions.append(Mention(m.group(0).strip(), value, "dollar", lsd))
+        mentions.append(Mention(_display_text(m.group(0)), value, "dollar", lsd))
     return mentions
 
 

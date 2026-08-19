@@ -62,6 +62,17 @@ def show_plan(plan, title):
         print(f"  promises: {', '.join(plan.promises)}")
 
 
+def _narrate(result, goal, client, mode, no_trace):
+    """Run the narrative stage and return its display block."""
+    import run_pipeline as rp
+    from agent.narrate import narrate, render_narrative
+    from guardrails import entity_audit as ea
+
+    candidate = narrate(result, goal, client,
+                        ea.canonical_entity_names(rp.load()), mode=mode)
+    return render_narrative(candidate, show_trace=not no_trace)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Run the FP&A close-cycle agent.")
     ap.add_argument("goal", nargs="?", default="",
@@ -79,6 +90,14 @@ def main(argv=None):
                     help="run both and print the cost comparison")
     ap.add_argument("--plan-only", action="store_true",
                     help="propose and validate a plan, then stop without executing")
+    ap.add_argument("--narrate", action="store_true",
+                    help="draft commentary from the ledger and audit every figure")
+    ap.add_argument("--narrate-mode", default="audit",
+                    choices=["audit", "inject"],
+                    help="'audit': the model writes, the audit gates. "
+                         "'inject': deterministic commentary, no model.")
+    ap.add_argument("--no-trace", action="store_true",
+                    help="hide the per-figure audit trace")
     args = ap.parse_args(argv)
 
     con = mz.connect_readonly()
@@ -97,6 +116,8 @@ def main(argv=None):
         if args.baseline_only:
             show_plan(reference, "DETERMINISTIC PLAN (hand-written, no model)")
             print("\n" + render(base))
+            if args.narrate:
+                print(_narrate(base, goal, None, "inject", args.no_trace))
             return 0 if base.complete else 1
 
     # ---- planned run -----------------------------------------------------
@@ -154,6 +175,13 @@ def main(argv=None):
         pricing_known=pr.pricing_known, latency_ms=pr.latency_ms,
         model=pr.model, attempts=len(pr.attempts))
     print("\n" + render(run))
+
+    if args.narrate:
+        # The model that wrote the plan also writes the prose. Both are gated:
+        # the plan by static validation before execution, the prose by the audit
+        # before publication. Neither gate is something the agent can invoke,
+        # skip, or reorder.
+        print(_narrate(run, goal, client, args.narrate_mode, args.no_trace))
 
     # ---- the comparison --------------------------------------------------
     if args.compare and base is not None:

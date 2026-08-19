@@ -288,6 +288,10 @@ def main(argv=None):
     ap.add_argument("--comparison", default="actual_vs_budget",
                     choices=["actual_vs_budget", "actual_vs_forecast"])
     ap.add_argument("--json", action="store_true", help="emit the full run ledger as JSON")
+    ap.add_argument("--narrate", action="store_true",
+                    help="add deterministic commentary (no model, no key needed)")
+    ap.add_argument("--no-trace", action="store_true",
+                    help="hide the per-figure audit trace")
     args = ap.parse_args(argv)
 
     con = mz.connect_readonly()
@@ -299,7 +303,25 @@ def main(argv=None):
         return 2
 
     result = Orchestrator(con).run(variance_package_plan(goal), goal)
-    print(result.ledger.to_json() if args.json else render(result))
+
+    if args.json:
+        print(result.ledger.to_json())
+        return 0 if result.complete else 1
+
+    print(render(result))
+
+    if args.narrate:
+        import run_pipeline as rp
+        from agent.narrate import narrate, render_narrative
+        from guardrails import entity_audit as ea
+
+        candidate = narrate(result, goal, client=None,
+                            all_entity_names=ea.canonical_entity_names(rp.load()),
+                            mode="inject")
+        print(render_narrative(candidate, show_trace=not args.no_trace))
+        if not candidate.publishable:
+            return 1
+
     return 0 if result.complete else 1
 
 

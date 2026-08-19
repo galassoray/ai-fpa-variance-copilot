@@ -482,20 +482,34 @@ def test_orchestrator_refuses_stale_marts(con, monkeypatch):
 # --------------------------------------------------------------------------
 # Phase-2 boundary
 # --------------------------------------------------------------------------
-#: Phase 3 introduces exactly one module permitted to touch a model. Every
-#: other module in src/agent must stay model-free, so that the execution engine
-#: remains provably correct independent of any planner. Widening this set should
-#: require a decision-log entry.
-LLM_ALLOWED_MODULES = {"planner.py"}
+#: The only modules permitted to reach a model. Every other module in
+#: src/agent must stay model-free, so the execution engine remains provably
+#: correct independent of any model behaviour.
+#:
+#: Phase 2: {} -- nothing touched a model.
+#: Phase 3: +planner.py -- the model proposes plans.
+#: Phase 4: +narrate.py -- the model writes prose over a computed fact pack.
+#:
+#: Widening this set is a deliberate act requiring a decision-log entry, which
+#: is the whole point of asserting it rather than documenting it.
+LLM_ALLOWED_MODULES = {"planner.py", "narrate.py"}
+
+#: Asserted separately because it is the load-bearing one: facts.py builds the
+#: audit whitelist. If it could reach a model, the whitelist the audit enforces
+#: could itself be model-influenced, and the guarantee would be circular.
+MUST_STAY_MODEL_FREE = {
+    "facts.py", "ledger.py", "orchestrator.py", "registry.py",
+    "tools.py", "materialize.py", "plan.py", "packages.py",
+}
 
 
-def test_only_the_planner_may_reach_a_model():
+def test_only_the_planner_and_narrator_may_reach_a_model():
     """The execution engine must be correct independent of any model.
 
-    Phase 2 asserted that nothing in src/agent imported a model client. Phase 3
-    adds a planner, which necessarily does -- so the assertion narrows rather
-    than disappears: the model client has exactly one home, and the ledger,
-    orchestrator, registry, tools, and materialization stay model-free.
+    Phase 2 asserted that nothing in src/agent imported a model client. Each
+    later phase narrows rather than abandons that: the model has exactly two
+    homes, and the ledger, orchestrator, registry, tools, materialization, and
+    fact-pack builder stay model-free.
     """
     banned = ("anthropic", "openai", "llm_client", "generate_commentary")
     agent_dir = os.path.join(SRC, "agent")
@@ -504,6 +518,28 @@ def test_only_the_planner_may_reach_a_model():
             continue
         text = open(os.path.join(agent_dir, fname)).read()
         for line in text.splitlines():
+            stripped = line.strip()
+            if not (stripped.startswith("import ") or stripped.startswith("from ")):
+                continue
+            for b in banned:
+                assert b not in stripped, f"{fname} imports {b}: {stripped}"
+
+
+def test_the_fact_pack_builder_cannot_reach_a_model():
+    """The whitelist the audit enforces must not be model-influenced.
+
+    If facts.py could call a model, the set of values the model is permitted to
+    state could itself be shaped by a model, and 'the prose matches the
+    whitelist' would guarantee nothing.
+    """
+    banned = ("anthropic", "openai", "llm_client", "generate_commentary",
+              "Planner", "narrate")
+    agent_dir = os.path.join(SRC, "agent")
+    for fname in sorted(MUST_STAY_MODEL_FREE):
+        path = os.path.join(agent_dir, fname)
+        if not os.path.exists(path):
+            continue
+        for line in open(path).read().splitlines():
             stripped = line.strip()
             if not (stripped.startswith("import ") or stripped.startswith("from ")):
                 continue
