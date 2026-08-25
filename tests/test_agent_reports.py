@@ -603,3 +603,61 @@ def test_the_arr_block_shows_balances_in_full(monkeypatch):
         assert labels[lab].count(",") >= 2, (
             f"{lab} does not look like a full figure: {labels[lab]}"
         )
+
+
+# --------------------------------------------------------------------------
+# 8. a fresh deploy has no database
+# --------------------------------------------------------------------------
+def test_the_agent_builds_its_own_marts_on_a_cold_start(tmp_path, monkeypatch):
+    """Regression for a deployment failure that local runs could never catch.
+
+    data/processed/*.duckdb is gitignored -- correctly, it is a build artifact
+    derived from the committed CSVs. So a fresh checkout has no database, and
+    the agent opens it READ-ONLY, which cannot create one. Every other page
+    computes from the CSVs in memory and never touches DuckDB, so the deployed
+    app failed on the agent page alone with "database does not exist" while
+    everything else worked.
+
+    Nobody who had ever run the project locally would see it: the file is
+    already there.
+    """
+    from agent import materialize as agent_mz
+
+    fresh = tmp_path / "processed" / "fpa.duckdb"
+    monkeypatch.setattr(agent_mz, "DB", str(fresh))
+    assert not fresh.exists()
+
+    # Read-only cannot create the database -- this is the deployed failure.
+    with pytest.raises(Exception):
+        agent_mz.connect_readonly()
+
+    stamp = agent_mz.ensure_ready(verbose=False)
+    assert stamp and fresh.exists()
+
+    con = agent_mz.connect_readonly()
+    try:
+        rows = con.execute("SELECT COUNT(*) FROM out_variance_detail").fetchone()[0]
+        assert rows > 0
+        agent_mz.assert_fresh(con)
+    finally:
+        con.close()
+
+    # Cheap and safe to call again: one hash comparison, no rebuild.
+    assert agent_mz.ensure_ready(verbose=False) == stamp
+
+
+def test_the_committed_demo_runs_are_not_gitignored():
+    """The deployed app serves these with no key. If they were ignored, the
+    public link would have nothing to replay."""
+    import subprocess
+
+    repo = os.path.join(HERE, "..")
+    runs = os.path.join(repo, "data", "agent_runs")
+    assert os.path.isdir(runs), "no committed demo runs"
+    files = [f for f in os.listdir(runs) if f.endswith(".json")]
+    assert files, "the demo run directory is empty"
+
+    for f in files:
+        r = subprocess.run(["git", "check-ignore", os.path.join("data", "agent_runs", f)],
+                           cwd=repo, capture_output=True, text=True)
+        assert r.returncode != 0, f"{f} is gitignored and would not deploy"

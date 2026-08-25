@@ -311,6 +311,42 @@ def materialize(outputs: dict | None = None, verbose: bool = True) -> str:
     return h
 
 
+def ensure_ready(verbose: bool = False) -> str:
+    """Build the database and marts if they are absent or stale.
+
+    WHY THIS EXISTS
+    ---------------
+    ``data/processed/*.duckdb`` is gitignored, correctly: it is a build
+    artifact derived from the committed CSVs, not source. But that means a
+    fresh checkout -- a clone, CI, or a Streamlit Community Cloud deploy --
+    has no database at all, and the agent opens it READ-ONLY, which cannot
+    create one. The deployed app failed with "database does not exist" on
+    every agent page while every other page worked, because the others compute
+    from the CSVs in memory and never touch DuckDB.
+
+    Materialization already knows how to build from source; it simply was
+    never invoked on a machine that had never run it. This is the entry point
+    that makes the agent self-healing on a cold start.
+
+    Safe and cheap to call repeatedly: when the marts are present and current
+    it is one hash comparison and returns.
+    """
+    try:
+        con = duckdb.connect(DB, read_only=True)
+        try:
+            assert_fresh(con)
+            return stored_hash(con) or ""
+        finally:
+            con.close()
+    except (duckdb.Error, StaleMartError, OSError):
+        # Absent, unreadable, or stale -- all are answered the same way, by
+        # rebuilding from the committed CSVs.
+        pass
+
+    os.makedirs(os.path.dirname(DB), exist_ok=True)
+    return materialize(verbose=verbose)
+
+
 def connect_readonly() -> "duckdb.DuckDBPyConnection":
     """Read-only handle for the agent.
 

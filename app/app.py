@@ -1439,6 +1439,18 @@ def page_agent():
             "so the agent's figures here reflect the committed dataset. The "
             "other pages reflect your edits.")
 
+    # Build the marts if this server has never built them. First call on a
+    # cold deploy takes a few seconds; every call after it is a hash check.
+    try:
+        with st.spinner("Preparing the agent's data\u2026"):
+            _agent_marts_ready()
+    except Exception as e:  # noqa: BLE001
+        st.error(f"**The agent's data could not be prepared.** "
+                 f"{type(e).__name__}: {e}")
+        st.caption("The other pages are unaffected: they compute from the "
+                   "synthetic CSVs in memory and do not use this database.")
+        return
+
     period = str(sel_month)[:7]
     st.markdown(f"<div class='small'>Analyzing <b>{esc(month_label(sel_month))}"
                 f"</b>, the reporting month selected in the sidebar.</div>",
@@ -1463,6 +1475,23 @@ def page_agent():
         _agent_now(A, period)
     else:
         _agent_live(A, period)
+
+
+@st.cache_resource(show_spinner=False)
+def _agent_marts_ready() -> str:
+    """Build the agent's marts if this machine has never built them.
+
+    data/processed/*.duckdb is gitignored -- correctly, it is a build artifact
+    derived from the committed CSVs. A fresh deploy therefore has no database,
+    and the agent opens it READ-ONLY, which cannot create one. Every other page
+    computes from the CSVs in memory and never touches DuckDB, so the deployed
+    app failed on the agent page alone with "database does not exist".
+
+    Cached, so the build happens once per server rather than once per rerun.
+    """
+    from agent import materialize as agent_mz
+
+    return agent_mz.ensure_ready(verbose=False)
 
 
 @st.cache_resource(show_spinner=False)
