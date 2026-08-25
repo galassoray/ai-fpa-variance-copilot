@@ -40,6 +40,9 @@ SECTION_PL = "pl_summary"
 SECTION_DRIVERS = "department_drivers"
 SECTION_TOP_DECOMP = "top_driver_decomposition"
 SECTION_SECOND_DECOMP = "second_driver_decomposition"
+SECTION_THIRD_DECOMP = "third_driver_decomposition"
+SECTION_FOURTH_DECOMP = "fourth_driver_decomposition"
+SECTION_FIFTH_DECOMP = "fifth_driver_decomposition"
 SECTION_COMP = "compensation_decomposition"
 SECTION_REVENUE = "revenue_decomposition"
 SECTION_ARR = "arr_bridge"
@@ -48,9 +51,22 @@ SECTION_TREND = "opex_trend"
 
 REQUIRED_SECTIONS = [
     SECTION_HEADLINE, SECTION_PL, SECTION_DRIVERS,
-    SECTION_TOP_DECOMP, SECTION_SECOND_DECOMP,
+    SECTION_TOP_DECOMP, SECTION_SECOND_DECOMP, SECTION_THIRD_DECOMP,
+    SECTION_FOURTH_DECOMP, SECTION_FIFTH_DECOMP,
     SECTION_COMP, SECTION_REVENUE, SECTION_ARR, SECTION_HEADCOUNT,
 ]
+
+#: Every department is decomposed, not just the top two.
+#:
+#: The earlier plan stopped at two on the reasoning that a monthly package only
+#: needs the largest drivers. That was optimising leanness that costs about ten
+#: milliseconds -- three additional local queries -- and it left the package
+#: genuinely incomplete: a close pack that explains two of five departments is
+#: not the whole picture, and it cannot produce a variance packet for the three
+#: owners it skipped.
+DECOMP_SECTIONS = [SECTION_TOP_DECOMP, SECTION_SECOND_DECOMP,
+                   SECTION_THIRD_DECOMP, SECTION_FOURTH_DECOMP,
+                   SECTION_FIFTH_DECOMP]
 
 
 class GoalError(ValueError):
@@ -150,40 +166,37 @@ def variance_package_plan(goal: dict) -> Plan:
                  {"period": "$GOAL.period", "comparison": "$GOAL.comparison"},
                  purpose=SECTION_PL),
 
+            # top_n must cover every department, because the decomposition
+            # steps below bind to rows[0..4] of this result.
             Step(4, "rank_variance_drivers",
                  {"period": "$GOAL.period", "dimension": "department",
                   "comparison": "$GOAL.comparison", "top_n": 5},
                  purpose=SECTION_DRIVERS),
 
-            # Bound at execution time from step 4. The model never reads step
-            # 4's output and retypes a department id.
-            Step(5, "decompose_variance",
-                 {"period": "$GOAL.period",
-                  "department_id": "$STEP_4.rows[0].member",
-                  "comparison": "$GOAL.comparison", "top_n": 5},
-                 purpose=SECTION_TOP_DECOMP),
+            # Bound at execution time from step 4, one per department in rank
+            # order. The model never reads step 4's output and retypes an id.
+            *[Step(5 + i, "decompose_variance",
+                   {"period": "$GOAL.period",
+                    "department_id": f"$STEP_4.rows[{i}].member",
+                    "comparison": "$GOAL.comparison", "top_n": 5},
+                   purpose=DECOMP_SECTIONS[i])
+              for i in range(len(DECOMP_SECTIONS))],
 
-            Step(6, "decompose_variance",
-                 {"period": "$GOAL.period",
-                  "department_id": "$STEP_4.rows[1].member",
-                  "comparison": "$GOAL.comparison", "top_n": 5},
-                 purpose=SECTION_SECOND_DECOMP),
-
-            Step(7, "get_comp_decomposition", {"period": "$GOAL.period"},
+            Step(10, "get_comp_decomposition", {"period": "$GOAL.period"},
                  purpose=SECTION_COMP),
 
-            Step(8, "get_revenue_decomposition", {"period": "$GOAL.period"},
+            Step(11, "get_revenue_decomposition", {"period": "$GOAL.period"},
                  purpose=SECTION_REVENUE),
 
-            Step(9, "get_arr_bridge", {"period": "$GOAL.period"},
+            Step(12, "get_arr_bridge", {"period": "$GOAL.period"},
                  purpose=SECTION_ARR),
 
-            Step(10, "get_headcount_movement", {"period": "$GOAL.period"},
+            Step(13, "get_headcount_movement", {"period": "$GOAL.period"},
                  purpose=SECTION_HEADCOUNT),
 
             # Enrichment: seasonality context. Its absence weakens the package
             # but does not invalidate it, so it does not block the run.
-            Step(11, "get_trend",
+            Step(14, "get_trend",
                  {"metric": "opex", "start_period": "$GOAL.fy_start",
                   "end_period": "$GOAL.period"},
                  purpose=SECTION_TREND, optional=True),

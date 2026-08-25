@@ -1,0 +1,645 @@
+{
+  "format_version": 2,
+  "saved_at_utc": "2026-08-21T15:59:02.843404+00:00",
+  "label": "live-fb7f9dafcb90",
+  "ledger": {
+    "run_id": "fb7f9dafcb90",
+    "goal": {
+      "period": "2025-09-01",
+      "comparison": "actual_vs_budget",
+      "fiscal_year": 2025,
+      "month_number": 9,
+      "quarter": "2025-Q3",
+      "fy_start": "2025-01-01",
+      "prior_period": "2025-08-01"
+    },
+    "budget": {
+      "max_steps": 14,
+      "max_wall_clock_s": 120.0,
+      "max_tokens": 100000,
+      "max_cost_usd": 1.0,
+      "max_replans_per_step": 2,
+      "max_replans_per_run": 4
+    },
+    "started_at": "2026-08-21T15:29:48.792714+00:00",
+    "outcome": "COMPLETED",
+    "refusal_reason": "",
+    "notes": [],
+    "planning": {
+      "model": "gpt-4.1",
+      "attempts": 1,
+      "latency_ms": 3073.53,
+      "tokens_in": 2490,
+      "tokens_out": 238,
+      "cost_usd": 0.006884,
+      "pricing_known": true
+    },
+    "cost": {
+      "steps": 2,
+      "wall_clock_s": 0.026,
+      "planning_latency_ms": 3073.53,
+      "tool_latency_ms": 25.14,
+      "tokens_in": 2490,
+      "tokens_out": 238,
+      "cost_usd": 0.006884,
+      "pricing_known": true,
+      "planner_model": "gpt-4.1",
+      "replans": 0
+    },
+    "steps": [
+      {
+        "step_idx": 1,
+        "tool": "rank_variance_drivers",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "dimension": "statement_line",
+          "top_n": 5
+        },
+        "params_resolved": {
+          "period": "2025-09-01",
+          "dimension": "statement_line",
+          "comparison": "actual_vs_budget",
+          "top_n": 5
+        },
+        "outcome": "OK",
+        "row_count": 3,
+        "result_hash": "b95ecead701dd438",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 13.564700027927756,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-21T15:29:48.806427+00:00"
+      },
+      {
+        "step_idx": 2,
+        "tool": "rank_variance_drivers",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "dimension": "account",
+          "comparison": "$GOAL.comparison",
+          "top_n": 10
+        },
+        "params_resolved": {
+          "period": "2025-09-01",
+          "dimension": "account",
+          "comparison": "actual_vs_budget",
+          "top_n": 10
+        },
+        "outcome": "OK",
+        "row_count": 10,
+        "result_hash": "05a0bc5d85f0bf86",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 11.573099996894598,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-21T15:29:48.818392+00:00"
+      }
+    ],
+    "results": {
+      "1": [
+        {
+          "rank": 1,
+          "member": "Operating Expenses",
+          "name": "Operating Expenses",
+          "actual": 2907541.78,
+          "base": 2765510.84,
+          "variance": 142030.94,
+          "oi_impact": -142030.94,
+          "share_of_total_oi_impact": 0.49898,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "member": "Revenue",
+          "name": "Revenue",
+          "actual": 2568827.32,
+          "base": 2678165.34,
+          "variance": -109338.02,
+          "oi_impact": -109338.02,
+          "share_of_total_oi_impact": 0.38413,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "member": "Cost of Revenue",
+          "name": "Cost of Revenue",
+          "actual": 481952.94,
+          "base": 448680.3,
+          "variance": 33272.64,
+          "oi_impact": -33272.64,
+          "share_of_total_oi_impact": 0.11689,
+          "favorable": false
+        }
+      ],
+      "2": [
+        {
+          "rank": 1,
+          "member": "REV_SUB",
+          "name": "Subscription Revenue",
+          "actual": 2400773.2,
+          "base": 2502958.26,
+          "variance": -102185.06,
+          "oi_impact": -102185.06,
+          "share_of_total_oi_impact": 0.26879,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "member": "SM_SAL",
+          "name": "Salaries",
+          "actual": 743727.5,
+          "base": 676666.67,
+          "variance": 67060.83,
+          "oi_impact": -67060.83,
+          "share_of_total_oi_impact": 0.1764,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "member": "RND_CONTRACT",
+          "name": "Contractors",
+          "actual": 164579.68,
+          "base": 102000.0,
+          "variance": 62579.68,
+          "oi_impact": -62579.68,
+          "share_of_total_oi_impact": 0.16461,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "member": "SM_MKT",
+          "name": "Paid Marketing",
+          "actual": 247111.54,
+          "base": 204000.0,
+          "variance": 43111.54,
+          "oi_impact": -43111.54,
+          "share_of_total_oi_impact": 0.1134,
+          "favorable": false
+        },
+        {
+          "rank": 5,
+          "member": "COGS_HOST",
+          "name": "Hosting / Infrastructure",
+          "actual": 324699.61,
+          "base": 287840.2,
+          "variance": 36859.41,
+          "oi_impact": -36859.41,
+          "share_of_total_oi_impact": 0.09695,
+          "favorable": false
+        },
+        {
+          "rank": 6,
+          "member": "CS_SAL",
+          "name": "Salaries",
+          "actual": 218035.67,
+          "base": 242666.67,
+          "variance": -24631.0,
+          "oi_impact": 24631.0,
+          "share_of_total_oi_impact": 0.06479,
+          "favorable": true
+        },
+        {
+          "rank": 7,
+          "member": "SM_COMM",
+          "name": "Commissions",
+          "actual": 132522.68,
+          "base": 150177.5,
+          "variance": -17654.82,
+          "oi_impact": 17654.82,
+          "share_of_total_oi_impact": 0.04644,
+          "favorable": true
+        },
+        {
+          "rank": 8,
+          "member": "REV_SVC",
+          "name": "Services Revenue",
+          "actual": 168054.12,
+          "base": 175207.08,
+          "variance": -7152.96,
+          "oi_impact": -7152.96,
+          "share_of_total_oi_impact": 0.01882,
+          "favorable": false
+        },
+        {
+          "rank": 9,
+          "member": "CS_SW",
+          "name": "Customer Success Software",
+          "actual": 28860.0,
+          "base": 22200.0,
+          "variance": 6660.0,
+          "oi_impact": -6660.0,
+          "share_of_total_oi_impact": 0.01752,
+          "favorable": false
+        },
+        {
+          "rank": 10,
+          "member": "GA_SAL",
+          "name": "Salaries",
+          "actual": 253793.95,
+          "base": 250000.0,
+          "variance": 3793.95,
+          "oi_impact": -3793.95,
+          "share_of_total_oi_impact": 0.00998,
+          "favorable": false
+        }
+      ]
+    }
+  },
+  "sections": {
+    "identify_top_statement_lines": {
+      "step": 1,
+      "tool": "rank_variance_drivers",
+      "params": {
+        "period": "2025-09-01",
+        "dimension": "statement_line",
+        "comparison": "actual_vs_budget",
+        "top_n": 5
+      },
+      "rows": [
+        {
+          "rank": 1,
+          "member": "Operating Expenses",
+          "name": "Operating Expenses",
+          "actual": 2907541.78,
+          "base": 2765510.84,
+          "variance": 142030.94,
+          "oi_impact": -142030.94,
+          "share_of_total_oi_impact": 0.49898,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "member": "Revenue",
+          "name": "Revenue",
+          "actual": 2568827.32,
+          "base": 2678165.34,
+          "variance": -109338.02,
+          "oi_impact": -109338.02,
+          "share_of_total_oi_impact": 0.38413,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "member": "Cost of Revenue",
+          "name": "Cost of Revenue",
+          "actual": 481952.94,
+          "base": 448680.3,
+          "variance": 33272.64,
+          "oi_impact": -33272.64,
+          "share_of_total_oi_impact": 0.11689,
+          "favorable": false
+        }
+      ],
+      "result_hash": "b95ecead701dd438",
+      "dimension": "statement_line"
+    },
+    "account_level_breakdown": {
+      "step": 2,
+      "tool": "rank_variance_drivers",
+      "params": {
+        "period": "2025-09-01",
+        "dimension": "account",
+        "comparison": "actual_vs_budget",
+        "top_n": 10
+      },
+      "rows": [
+        {
+          "rank": 1,
+          "member": "REV_SUB",
+          "name": "Subscription Revenue",
+          "actual": 2400773.2,
+          "base": 2502958.26,
+          "variance": -102185.06,
+          "oi_impact": -102185.06,
+          "share_of_total_oi_impact": 0.26879,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "member": "SM_SAL",
+          "name": "Salaries",
+          "actual": 743727.5,
+          "base": 676666.67,
+          "variance": 67060.83,
+          "oi_impact": -67060.83,
+          "share_of_total_oi_impact": 0.1764,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "member": "RND_CONTRACT",
+          "name": "Contractors",
+          "actual": 164579.68,
+          "base": 102000.0,
+          "variance": 62579.68,
+          "oi_impact": -62579.68,
+          "share_of_total_oi_impact": 0.16461,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "member": "SM_MKT",
+          "name": "Paid Marketing",
+          "actual": 247111.54,
+          "base": 204000.0,
+          "variance": 43111.54,
+          "oi_impact": -43111.54,
+          "share_of_total_oi_impact": 0.1134,
+          "favorable": false
+        },
+        {
+          "rank": 5,
+          "member": "COGS_HOST",
+          "name": "Hosting / Infrastructure",
+          "actual": 324699.61,
+          "base": 287840.2,
+          "variance": 36859.41,
+          "oi_impact": -36859.41,
+          "share_of_total_oi_impact": 0.09695,
+          "favorable": false
+        },
+        {
+          "rank": 6,
+          "member": "CS_SAL",
+          "name": "Salaries",
+          "actual": 218035.67,
+          "base": 242666.67,
+          "variance": -24631.0,
+          "oi_impact": 24631.0,
+          "share_of_total_oi_impact": 0.06479,
+          "favorable": true
+        },
+        {
+          "rank": 7,
+          "member": "SM_COMM",
+          "name": "Commissions",
+          "actual": 132522.68,
+          "base": 150177.5,
+          "variance": -17654.82,
+          "oi_impact": 17654.82,
+          "share_of_total_oi_impact": 0.04644,
+          "favorable": true
+        },
+        {
+          "rank": 8,
+          "member": "REV_SVC",
+          "name": "Services Revenue",
+          "actual": 168054.12,
+          "base": 175207.08,
+          "variance": -7152.96,
+          "oi_impact": -7152.96,
+          "share_of_total_oi_impact": 0.01882,
+          "favorable": false
+        },
+        {
+          "rank": 9,
+          "member": "CS_SW",
+          "name": "Customer Success Software",
+          "actual": 28860.0,
+          "base": 22200.0,
+          "variance": 6660.0,
+          "oi_impact": -6660.0,
+          "share_of_total_oi_impact": 0.01752,
+          "favorable": false
+        },
+        {
+          "rank": 10,
+          "member": "GA_SAL",
+          "name": "Salaries",
+          "actual": 253793.95,
+          "base": 250000.0,
+          "variance": 3793.95,
+          "oi_impact": -3793.95,
+          "share_of_total_oi_impact": 0.00998,
+          "favorable": false
+        }
+      ],
+      "result_hash": "05a0bc5d85f0bf86",
+      "dimension": "account"
+    }
+  },
+  "outcome": "COMPLETED",
+  "missing_sections": [],
+  "refusal_reason": "",
+  "narrative": {
+    "status": "accepted",
+    "text": "September operating income was below budget, driven primarily by higher operating expenses and lower revenue.\n\nThe largest unfavorable variance was in Operating Expenses, which were $2,907,541.78 compared to a budget of $2,765,510.84, resulting in a negative operating income impact of $142,030.94. Revenue was also below budget at $2,568,827.32 versus $2,678,165.34, with a negative impact of $109,338.02. Within revenue, Subscription Revenue was $2,400,773.20, falling short of the $2,502,958.26 budget by $102,185.06. On the expense side, Salaries in SM_SAL were $743,727.50, exceeding the $676,666.67 budget by $67,060.83, and Contractors in RND_CONTRACT were $164,579.68, over the $102,000.00 budget by $62,579.68. Paid Marketing in SM_MKT was $247,111.54, above the $204,000.00 budget by $43,111.54. Hosting / Infrastructure in COGS_HOST was $324,699.61, exceeding the $287,840.20 budget by $36,859.41. Cost of Revenue was $481,952.94, above the $448,680.30 budget by $33,272.64.\n\nFavorable variances partially offset these impacts: Salaries in CS_SAL were $218,035.67, below the $242,666.67 budget, with a positive impact of $24,631.00, and Commissions in SM_COMM were $132,522.68, under the $150,177.50 budget by $17,654.82.\n\nThere is insufficient information in the provided facts to comment on retention or ARR for the period.",
+    "source": "model",
+    "attempts": 1,
+    "audit_ran": true,
+    "audit_passed": true,
+    "deterministic_by_choice": false,
+    "violations": [],
+    "entity_flags": [],
+    "matched": [
+      [
+        "$2,907,541.78",
+        2907541.78,
+        "Operating Expenses actual"
+      ],
+      [
+        "$2,765,510.84",
+        2765510.84,
+        "Operating Expenses budget/base"
+      ],
+      [
+        "$142,030.94",
+        142030.94,
+        "Operating Expenses variance"
+      ],
+      [
+        "$2,568,827.32",
+        2568827.32,
+        "Revenue actual"
+      ],
+      [
+        "$2,678,165.34",
+        2678165.34,
+        "Revenue budget/base"
+      ],
+      [
+        "$109,338.02",
+        109338.02,
+        "Revenue variance (magnitude)"
+      ],
+      [
+        "$2,400,773.20",
+        2400773.2,
+        "Subscription Revenue actual"
+      ],
+      [
+        "$2,502,958.26",
+        2502958.26,
+        "Subscription Revenue budget/base"
+      ],
+      [
+        "$102,185.06",
+        102185.06,
+        "Subscription Revenue variance (magnitude)"
+      ],
+      [
+        "$743,727.50",
+        743727.5,
+        "Salaries actual"
+      ],
+      [
+        "$676,666.67",
+        676666.67,
+        "Salaries budget/base"
+      ],
+      [
+        "$67,060.83",
+        67060.83,
+        "Salaries variance"
+      ],
+      [
+        "$164,579.68",
+        164579.68,
+        "Contractors actual"
+      ],
+      [
+        "$102,000.00",
+        102000.0,
+        "Contractors budget/base"
+      ],
+      [
+        "$62,579.68",
+        62579.68,
+        "Contractors variance"
+      ],
+      [
+        "$247,111.54",
+        247111.54,
+        "Paid Marketing actual"
+      ],
+      [
+        "$204,000.00",
+        204000.0,
+        "Paid Marketing budget/base"
+      ],
+      [
+        "$43,111.54",
+        43111.54,
+        "Paid Marketing variance"
+      ],
+      [
+        "$324,699.61",
+        324699.61,
+        "Hosting / Infrastructure actual"
+      ],
+      [
+        "$287,840.20",
+        287840.2,
+        "Hosting / Infrastructure budget/base"
+      ],
+      [
+        "$36,859.41",
+        36859.41,
+        "Hosting / Infrastructure variance"
+      ],
+      [
+        "$481,952.94",
+        481952.94,
+        "Cost of Revenue actual"
+      ],
+      [
+        "$448,680.30",
+        448680.3,
+        "Cost of Revenue budget/base"
+      ],
+      [
+        "$33,272.64",
+        33272.64,
+        "Cost of Revenue variance"
+      ],
+      [
+        "$218,035.67",
+        218035.67,
+        "Salaries actual"
+      ],
+      [
+        "$242,666.67",
+        242666.67,
+        "Salaries budget/base"
+      ],
+      [
+        "$24,631.00",
+        24631.0,
+        "Salaries variance (magnitude)"
+      ],
+      [
+        "$132,522.68",
+        132522.68,
+        "Commissions actual"
+      ],
+      [
+        "$150,177.50",
+        150177.5,
+        "Commissions budget/base"
+      ],
+      [
+        "$17,654.82",
+        17654.82,
+        "Commissions variance (magnitude)"
+      ]
+    ],
+    "reason": ""
+  },
+  "gates": {
+    "run_id": "fb7f9dafcb90",
+    "artifact_hash": "704e869d4be0d430",
+    "audit_ok": true,
+    "published": true,
+    "plan_review": {
+      "decision": "APPROVED",
+      "reviewer": "live session",
+      "note": "plan review not surfaced in the UI",
+      "timestamp": "2026-08-21T15:29:55.419683+00:00",
+      "plan_summary": [
+        {
+          "step": 1,
+          "tool": "rank_variance_drivers",
+          "params": {
+            "period": "$GOAL.period",
+            "dimension": "statement_line",
+            "top_n": 5
+          },
+          "purpose": "identify_top_statement_lines",
+          "optional": false,
+          "resolved_at_runtime": [
+            "period"
+          ]
+        },
+        {
+          "step": 2,
+          "tool": "rank_variance_drivers",
+          "params": {
+            "period": "$GOAL.period",
+            "dimension": "account",
+            "comparison": "$GOAL.comparison",
+            "top_n": 10
+          },
+          "purpose": "account_level_breakdown",
+          "optional": false,
+          "resolved_at_runtime": [
+            "comparison",
+            "period"
+          ]
+        }
+      ]
+    },
+    "approval": {
+      "decision": "APPROVED",
+      "approver": "Ray",
+      "note": "",
+      "timestamp": "2026-08-21T15:58:50.372886+00:00",
+      "artifact_hash": "704e869d4be0d430"
+    }
+  }
+}

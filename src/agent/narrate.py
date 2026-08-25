@@ -130,6 +130,20 @@ def narrate(result, goal: dict, client, all_entity_names: list,
 
     nr = generate_commentary(pack, client, all_entity_names,
                              mode=mode, max_retries=max_retries)
+
+    # The copilot's deterministic narrative reads a fixed schema and produces
+    # nothing for a run that filled none of those slots -- so a comparative or
+    # trend question executed perfectly and then fell back to empty prose.
+    # The briefing has already assembled the same material by reference, so it
+    # can supply the fallback, and the audit below verifies it identically.
+    if not (nr.text or "").strip():
+        from agent.briefing import build_briefing, narrative_from_briefing
+
+        substitute = narrative_from_briefing(build_briefing(result, goal))
+        if substitute:
+            nr.text = substitute
+            nr.source = "injection"
+            nr.status = "accepted"
     # generate_commentary reports source="injection" both when injection was
     # CHOSEN and when it was reached because the model's drafts were rejected.
     # Collapsing those would let a demo caption read "model output was rejected"

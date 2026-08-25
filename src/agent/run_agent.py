@@ -62,6 +62,32 @@ def show_plan(plan, title):
         print(f"  promises: {', '.join(plan.promises)}")
 
 
+def _narrate_candidate(result, goal, client, mode):
+    import run_pipeline as rp
+    from agent.narrate import narrate
+    from guardrails import entity_audit as ea
+
+    return narrate(result, goal, client,
+                   ea.canonical_entity_names(rp.load()), mode=mode)
+
+
+def _write_deck(result, goal, candidate, target):
+    """Write the deck. Publication state is carried onto the appendix slide."""
+    from agent.deck import build_deck
+    from agent.gates import PublicationPacket
+
+    packet = PublicationPacket(result, candidate)
+    if candidate is not None and candidate.publishable:
+        packet.approve("CLI", "audit clean")
+    d = build_deck(result, goal, candidate, packet)
+    path = (target if target != "auto"
+            else f"variance-review-{str(goal['period'])[:7]}.pptx")
+    d.prs.save(path)
+    return (f"\nDeck written: {path}\n"
+            f"  {len(d.prs.slides._sldIdLst)} slides · {len(d.provenance)} "
+            f"figures, each traced to a computed value")
+
+
 def _narrate(result, goal, client, mode, no_trace):
     """Run the narrative stage and return its display block."""
     import run_pipeline as rp
@@ -73,7 +99,24 @@ def _narrate(result, goal, client, mode, no_trace):
     return render_narrative(candidate, show_trace=not no_trace)
 
 
+def _utf8_stdout():
+    """Make stdout safe for the characters this CLI prints.
+
+    On a console whose code page is not UTF-8 -- the Windows default -- printing
+    a middle dot or an arrow raises UnicodeEncodeError and the command dies
+    after doing all the work. Reconfiguring with errors="replace" means a
+    console that cannot render a character degrades to a placeholder instead of
+    losing the whole run.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):      # already wrapped, or not a tty
+            pass
+
+
 def main(argv=None):
+    _utf8_stdout()
     ap = argparse.ArgumentParser(description="Run the FP&A close-cycle agent.")
     ap.add_argument("goal", nargs="?", default="",
                     help="natural-language goal, e.g. 'prepare the September variance package'")
@@ -98,6 +141,8 @@ def main(argv=None):
                          "'inject': deterministic commentary, no model.")
     ap.add_argument("--no-trace", action="store_true",
                     help="hide the per-figure audit trace")
+    ap.add_argument("--deck", nargs="?", const="auto", default=None,
+                    metavar="PATH", help="also write a PowerPoint variance deck")
     args = ap.parse_args(argv)
 
     con = mz.connect_readonly()
@@ -116,8 +161,13 @@ def main(argv=None):
         if args.baseline_only:
             show_plan(reference, "DETERMINISTIC PLAN (hand-written, no model)")
             print("\n" + render(base))
-            if args.narrate:
-                print(_narrate(base, goal, None, "inject", args.no_trace))
+            if args.narrate or args.deck:
+                cand = _narrate_candidate(base, goal, None, "inject")
+                if args.narrate:
+                    from agent.narrate import render_narrative
+                    print(render_narrative(cand, show_trace=not args.no_trace))
+                if args.deck:
+                    print(_write_deck(base, goal, cand, args.deck))
             return 0 if base.complete else 1
 
     # ---- planned run -----------------------------------------------------
@@ -176,12 +226,17 @@ def main(argv=None):
         model=pr.model, attempts=len(pr.attempts))
     print("\n" + render(run))
 
-    if args.narrate:
+    if args.narrate or args.deck:
         # The model that wrote the plan also writes the prose. Both are gated:
         # the plan by static validation before execution, the prose by the audit
         # before publication. Neither gate is something the agent can invoke,
         # skip, or reorder.
-        print(_narrate(run, goal, client, args.narrate_mode, args.no_trace))
+        cand = _narrate_candidate(run, goal, client, args.narrate_mode)
+        if args.narrate:
+            from agent.narrate import render_narrative
+            print(render_narrative(cand, show_trace=not args.no_trace))
+        if args.deck:
+            print(_write_deck(run, goal, cand, args.deck))
 
     # ---- the comparison --------------------------------------------------
     if args.compare and base is not None:

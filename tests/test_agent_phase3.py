@@ -419,7 +419,7 @@ def test_scoring_surfaces_omissions_and_additions(goal):
     s = score_plan(cand, ref)
     assert 0 < s["step_recall"] < 1
     assert "get_arr_bridge" in s["tools_missing_vs_reference"]
-    assert s["n_steps"] == 3 and s["n_steps_reference"] == 11
+    assert s["n_steps"] == 3 and s["n_steps_reference"] == 14
 
 
 def test_scoring_flags_unbacked_promises(goal):
@@ -914,3 +914,109 @@ def test_differing_arguments_are_not_reported_as_divergence(con, goal):
     assert result_hash(b_rows) != result_hash(a_rows), (
         "hashes legitimately differ; that is why the key must include top_n"
     )
+
+
+# --------------------------------------------------------------------------
+# refusal: declining a question the tools cannot answer
+# --------------------------------------------------------------------------
+def test_the_planner_can_refuse_a_question_outside_the_tool_surface(goal):
+    """Refusal is a first-class outcome, not a failure to plan.
+
+    The tool surface is deliberately narrow, so questions outside it are
+    expected. The behaviour that must NOT happen is answering a different
+    question the tools do happen to support and presenting it as though it were
+    the one asked -- which is the plausible-and-wrong failure this whole
+    architecture exists to prevent, one level up from a fabricated number.
+    """
+    from agent.planner import PlannerRefusal
+
+    reason = ("This needs cash-flow and balance-sheet data; the available "
+              "tools only expose P&L, headcount and ARR.")
+    client = Scripted(json.dumps({"refusal": reason}))
+    res = Planner(client).propose("what is our cash runway?", goal)
+
+    assert res.refused and not res.ok
+    assert res.refusal == reason
+    assert res.plan is None
+    assert len(res.attempts) == 1 and not res.attempts[0]["accepted"]
+    assert isinstance(PlannerRefusal(reason), RuntimeError)
+
+
+def test_a_refusal_is_distinct_from_a_planning_failure(goal):
+    """Collapsing the two would make correct behaviour look like a defect."""
+    from agent.planner import PlannerError
+
+    bad = plan_json([{"idx": 1, "tool": "run_sql", "params": {}}])
+    with pytest.raises(PlannerError):
+        Planner(Scripted(bad), max_attempts=2).propose("g", goal)
+
+    res = Planner(Scripted(json.dumps({"refusal": "out of scope"}))).propose(
+        "g", goal)
+    assert res.refused
+
+
+def test_a_refusal_with_steps_is_not_a_refusal(goal):
+    """A model that hedges -- refusing AND planning -- must not have the
+    refusal honoured, or it could decline in prose while still querying."""
+    payload = json.dumps({"refusal": "cannot answer", "steps": GOOD_STEPS})
+    res = Planner(Scripted(payload)).propose("g", goal)
+    assert not res.refused and res.ok
+
+
+def test_the_prompt_tells_the_model_how_to_refuse(goal):
+    p = build_system_prompt(set(goal))
+    assert "IF THE TOOLS CANNOT ANSWER THE QUESTION" in p
+    assert '"refusal"' in p
+    assert "Do NOT substitute a related question" in p
+
+
+# --------------------------------------------------------------------------
+# multi-turn: a follow-up plans the delta
+# --------------------------------------------------------------------------
+def test_prior_runs_reach_the_planner_as_a_summary(goal):
+    """Summaries, never rows: replaying full results would grow the prompt
+    without bound across a conversation, and would invite the model to quote a
+    figure from context instead of retrieving it -- the transcription failure
+    the architecture exists to prevent."""
+    prior = [{
+        "goal_text": "why did opex miss plan?",
+        "sections": {"a": {"step": 1, "tool": "rank_variance_drivers",
+                           "params": {"period": "2025-09-01",
+                                      "dimension": "department"},
+                           "rows": [{"name": "Sales & Marketing",
+                                     "oi_impact": -91995.40}]}},
+    }]
+    client = Scripted(plan_json(GOOD_STEPS))
+    Planner(client).propose("break that down by account", goal,
+                            prior_runs=prior)
+
+    sent = client.prompts[0][1]
+    assert "why did opex miss plan?" in sent
+    assert "rank_variance_drivers" in sent
+    assert "Sales & Marketing" in sent
+    assert "91995" not in sent and "91,995" not in sent, (
+        "figures from a prior run must not be replayed into the prompt"
+    )
+    assert "FOLLOW-UP" in sent
+    assert "cannot reference an earlier run's rows" in sent
+
+
+def test_no_prior_runs_means_no_follow_up_framing(goal):
+    client = Scripted(plan_json(GOOD_STEPS))
+    Planner(client).propose("first question", goal)
+    assert "FOLLOW-UP" not in client.prompts[0][1]
+
+
+def test_summarize_prior_is_compact(goal):
+    from agent.planner import summarize_prior
+
+    assert summarize_prior([]) == "(nothing yet)"
+    big = [{"goal_text": "q",
+            "sections": {f"s{i}": {"step": i, "tool": "get_pl_summary",
+                                   "params": {"period": "2025-09-01"},
+                                   "rows": [{"statement_line": f"L{j}"}
+                                            for j in range(50)]}
+                         for i in range(1, 6)}}]
+    text = summarize_prior(big)
+    assert len(text) < 1200, "a session digest must not grow without bound"
+    assert text.count("L") < 25

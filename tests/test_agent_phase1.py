@@ -238,6 +238,15 @@ def test_every_tool_result_is_json_serializable(con):
         ("get_arr_bridge", {"period": PERIOD}),
         ("get_headcount_movement", {"period": PERIOD}),
         ("get_trend", {"metric": "revenue", "start_period": "2025-01", "end_period": "2025-09"}),
+        ("compare_periods", {"period_a": PERIOD, "period_b": "2025-08",
+                             "dimension": "department"}),
+        ("get_ytd_summary", {"period": PERIOD}),
+        ("rank_persistent_drivers", {"period": PERIOD, "dimension": "account"}),
+        ("get_account_trend", {"account_id": "SM_SAL",
+                               "start_period": "2025-04", "end_period": PERIOD}),
+        ("get_opex_ratio_trend", {"department_id": "SM",
+                                  "start_period": "2025-04", "end_period": PERIOD}),
+        ("rank_mom_movers", {"period": PERIOD, "dimension": "account"}),
     ]
     assert {c[0] for c in cases} == set(reg.REGISTRY), "a tool is not covered by this test"
     for name, params in cases:
@@ -441,3 +450,174 @@ def test_build_hash_changes_when_computation_changes(tmp_path, monkeypatch):
     monkeypatch.setattr(mz, "COMPUTATION_SOURCES", mz.COMPUTATION_SOURCES + [extra, extra])
     # Same file listed twice changes the digest input, standing in for an edit.
     assert mz.build_hash() != before
+
+
+# --------------------------------------------------------------------------
+# comparative and trend tools
+# --------------------------------------------------------------------------
+# Added because the original eleven all answered variations of "what happened
+# this month against plan", so every question landed on the same handful of
+# calls and model-authored plans looked canned. That was a TOOL SURFACE
+# problem, not a prompt problem.
+#
+# Held to exactly the same standard as the originals: parity against the
+# canonical pandas layer, oi_impact rather than raw variance, bounded windows,
+# and declared output types.
+
+def test_compare_periods_matches_computation(con, outputs):
+    rows = _call("compare_periods",
+                 {"period_a": PERIOD, "period_b": "2025-08",
+                  "dimension": "department", "top_n": 10}, con).rows
+    det = outputs["variance_detail"]
+    a = det[det["month"] == PERIOD_KEY].groupby("department_id")["actual"].sum()
+    b = det[det["month"] == "2025-08-01"].groupby("department_id")["actual"].sum()
+    for r in rows:
+        assert abs(r["actual_a"] - a[r["member"]]) < CENT
+        assert abs(r["actual_b"] - b[r["member"]]) < CENT
+        assert abs(r["change"] - (a[r["member"]] - b[r["member"]])) < CENT
+
+
+def test_compare_periods_ranks_by_absolute_change(con):
+    rows = _call("compare_periods",
+                 {"period_a": PERIOD, "period_b": "2025-08",
+                  "dimension": "account", "top_n": 10}, con).rows
+    changes = [abs(r["change"]) for r in rows]
+    assert changes == sorted(changes, reverse=True)
+
+
+def test_ytd_summary_matches_computation(con, outputs):
+    rows = _call("get_ytd_summary", {"period": PERIOD}, con).rows
+    det = outputs["variance_detail"]
+    sub = det[det["month"] == PERIOD_KEY]
+    for r in rows:
+        line = sub[sub["statement_line"] == r["statement_line"]]
+        assert abs(r["actual_ytd"] - line["actual_ytd"].sum()) < CENT
+        assert abs(r["budget_ytd"] - line["budget_ytd"].sum()) < CENT
+        assert abs(r["oi_impact_ytd"] - line["oi_impact_ytd"].sum()) < CENT
+
+
+def test_ytd_is_larger_than_the_single_month(con, outputs):
+    """September YTD must exceed September alone -- the check that the tool is
+    reading the cumulative columns rather than the monthly ones."""
+    ytd = {r["statement_line"]: r["actual_ytd"]
+           for r in _call("get_ytd_summary", {"period": PERIOD}, con).rows}
+    month = {r["statement_line"]: r["actual"]
+             for r in _call("get_pl_summary", {"period": PERIOD}, con).rows}
+    for line, v in month.items():
+        assert ytd[line] > v * 5, f"{line}: YTD {ytd[line]} vs month {v}"
+
+
+def test_persistent_drivers_counts_unfavourable_months(con, outputs):
+    rows = _call("rank_persistent_drivers",
+                 {"period": PERIOD, "months_back": 6, "dimension": "account",
+                  "top_n": 10}, con).rows
+    det = outputs["variance_detail"]
+    months = sorted(det["month"].unique())
+    window = [m for m in months if m <= PERIOD_KEY][-6:]
+    sub = det[det["month"].isin(window)]
+    for r in rows:
+        acct = sub[sub["account_id"] == r["member"]]
+        unfav = acct.groupby("month")["oi_impact_ab"].sum()
+        assert r["months_observed"] == acct["month"].nunique()
+        assert r["months_unfavorable"] == int((acct["oi_impact_ab"] < 0).sum())
+        assert abs(r["cumulative_oi_impact"] - acct["oi_impact_ab"].sum()) < CENT
+
+
+def test_persistent_drivers_answers_a_different_question(con):
+    """A line that misses every month is a different problem from one that
+    missed once, and the ranking must reflect that rather than this month's
+    size."""
+    persistent = _call("rank_persistent_drivers",
+                       {"period": PERIOD, "months_back": 6,
+                        "dimension": "account", "top_n": 5}, con).rows
+    this_month = _call("rank_variance_drivers",
+                       {"period": PERIOD, "dimension": "account",
+                        "top_n": 5}, con).rows
+    assert all(r["months_unfavorable"] >= 1 for r in persistent)
+    counts = [r["months_unfavorable"] for r in persistent]
+    assert counts == sorted(counts, reverse=True)
+    assert [r["member"] for r in persistent] != [r["member"] for r in this_month], (
+        "persistent ranking should not simply reproduce this month's ranking"
+    )
+
+
+def test_account_trend_matches_computation(con, outputs):
+    rows = _call("get_account_trend",
+                 {"account_id": "SM_SAL", "start_period": "2025-04",
+                  "end_period": PERIOD}, con).rows
+    det = outputs["variance_detail"]
+    sub = det[(det["account_id"] == "SM_SAL")
+              & (det["month"] >= "2025-04-01") & (det["month"] <= PERIOD_KEY)]
+    exp = sub.groupby("month")["actual"].sum()
+    assert len(rows) == len(exp)
+    for r in rows:
+        assert abs(r["actual"] - exp[r["month"]]) < CENT
+
+
+def test_account_trend_window_is_bounded(con):
+    r = _call("get_account_trend",
+              {"account_id": "SM_SAL", "start_period": "2024-01",
+               "end_period": "2025-12"}, con)
+    assert r.ok and r.row_count == 24
+    bad = _call("get_account_trend",
+                {"account_id": "SM_SAL", "start_period": PERIOD,
+                 "end_period": "2025-01"}, con)
+    assert bad.outcome == reg.TOOL_ERROR and "after" in bad.error
+
+
+def test_opex_ratio_trend_matches_computation(con, outputs):
+    rows = _call("get_opex_ratio_trend",
+                 {"department_id": "SM", "start_period": "2025-04",
+                  "end_period": PERIOD}, con).rows
+    exp = outputs["dept_opex_pct_revenue"]
+    exp = exp[(exp["department_id"] == "SM")
+              & (exp["month"] >= "2025-04-01") & (exp["month"] <= PERIOD_KEY)]
+    lookup = {r["month"]: r for _, r in exp.iterrows()}
+    assert len(rows) == len(exp)
+    for r in rows:
+        e = lookup[r["month"]]
+        assert abs(r["dept_opex"] - e["dept_opex"]) < CENT
+        assert abs(r["dept_opex_pct_revenue"] - e["dept_opex_pct_revenue"]) < 1e-4
+
+
+def test_mom_movers_matches_computation(con, outputs):
+    rows = _call("rank_mom_movers",
+                 {"period": PERIOD, "dimension": "account", "top_n": 10}, con).rows
+    det = outputs["variance_detail"]
+    sub = det[det["month"] == PERIOD_KEY]
+    exp = sub.groupby("account_id")["actual_mom_amount"].sum()
+    for r in rows:
+        assert abs(r["change_vs_prior_month"] - exp[r["member"]]) < CENT
+    changes = [abs(r["change_vs_prior_month"]) for r in rows]
+    assert changes == sorted(changes, reverse=True)
+
+
+def test_new_tools_return_operating_income_impact(con):
+    """The sign-convention rule applies to every tool, not just the originals:
+    a raw change is uninterpretable without knowing whether the line is revenue
+    or expense."""
+    for name, params in [
+        ("compare_periods", {"period_a": PERIOD, "period_b": "2025-08",
+                             "dimension": "department"}),
+        ("rank_mom_movers", {"period": PERIOD, "dimension": "account"}),
+    ]:
+        rows = _call(name, params, con).rows
+        assert rows and all("oi_impact_of_change" in r for r in rows)
+
+    rev = [r for r in _call("rank_mom_movers",
+                            {"period": PERIOD, "dimension": "account",
+                             "top_n": 10}, con).rows
+           if r["member"].startswith("REV_")]
+    for r in rev:
+        assert (r["oi_impact_of_change"] > 0) == (r["change_vs_prior_month"] > 0)
+
+
+def test_the_new_tools_are_type_declared_and_bounded():
+    for name in ("compare_periods", "get_ytd_summary", "rank_persistent_drivers",
+                 "get_account_trend", "get_opex_ratio_trend", "rank_mom_movers"):
+        t = reg.REGISTRY[name]
+        assert t.field_types is not None, f"{name} declares no field_types"
+        for pname, spec in t.params.items():
+            assert isinstance(spec, reg.ALLOWED_PARAM_TYPES)
+            if isinstance(spec, reg.IntParam):
+                assert spec.hi <= 12, f"{name}.{pname} is unbounded"

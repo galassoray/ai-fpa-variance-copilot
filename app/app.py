@@ -287,6 +287,7 @@ with st.sidebar:
     st.caption("Code computes every number. The model only explains.")
 
     page = st.radio("View", ["Overview", "Variance", "Forecast", "Commentary",
+                             "Close-cycle agent",
                              "Guardrails & Eval", "ROI", "Decision log"],
                     label_visibility="collapsed")
     SC = scenario_sidebar()
@@ -856,11 +857,1051 @@ def page_decisions():
         st.info("decision_log.md not found.")
 
 
+class _CachedCandidate:
+    """Adapts a saved narrative to the shape the deck builder expects."""
+
+    def __init__(self, narr: dict):
+        n = narr or {}
+        self.text = n.get("text", "")
+        self.source = n.get("source", "")
+        self.attempts = n.get("attempts", 0)
+        self.matched = [tuple(m) for m in (n.get("matched") or [])]
+        self.violations = list(n.get("violations") or [])
+        self.entity_flags = list(n.get("entity_flags") or [])
+        self.deterministic_by_choice = n.get("deterministic_by_choice", False)
+        self.audit_ran = n.get("audit_ran", False)
+        self.audit_passed = n.get("audit_passed", False)
+        self.reason = n.get("reason", "")
+        self.status = n.get("status", "")
+
+    @property
+    def publishable(self) -> bool:
+        return self.audit_ran and self.audit_passed and bool(self.text)
+
+
+def _agent_imports():
+    """Imported lazily so the other pages carry no agent import cost."""
+    from agent import materialize as agent_mz
+    from agent import replay as agent_replay
+    from agent import tools as _agent_tools  # noqa: F401  (registers the tools)
+    from agent.gates import PublicationPacket, blocking_reasons, review_plan
+    from agent.narrate import narrate as agent_narrate
+    from agent.orchestrator import Orchestrator
+    from agent.packages import build_goal, variance_package_plan
+    from agent.planner import Planner, PlannerError, make_client as agent_client
+    from agent.run_package import render as render_package
+    return dict(mz=agent_mz, replay=agent_replay, Orchestrator=Orchestrator,
+                build_goal=build_goal, variance_package_plan=variance_package_plan,
+                narrate=agent_narrate, render_package=render_package,
+                PublicationPacket=PublicationPacket, review_plan=review_plan,
+                blocking_reasons=blocking_reasons, Planner=Planner,
+                PlannerError=PlannerError, agent_client=agent_client)
+
+
+def _section(title: str, why: str):
+    """A titled section with one line on what it is and why it matters.
+
+    Rendered in near-black rather than the muted grey used elsewhere in the
+    app: this copy is the explanation a first-time reader depends on, and grey
+    body text at this size is genuinely hard to read on a projector.
+    """
+    st.markdown(
+        f"<div style='font-size:1.05rem;font-weight:700;color:#0F172A;"
+        f"letter-spacing:-0.01em;margin:2px 0 4px'>{esc(title)}</div>",
+        unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='color:#0F172A;font-size:0.92rem;line-height:1.5;"
+        f"margin-bottom:6px'>{why}</div>", unsafe_allow_html=True)
+
+
+def _plan_table(summary):
+    """Steps in EXECUTION order.
+
+    The first version let the dataframe sort by whatever column the user last
+    clicked, and it defaulted to section name -- so the plan rendered 3, 2, 4,
+    1, 5. Sequence is the entire content of a plan; a plan you cannot read in
+    order is not a plan.
+    """
+    rows = []
+    for s in sorted(summary, key=lambda x: x["step"]):
+        args = ",  ".join(f"{k}={v}" for k, v in s["params"].items())
+        rows.append({"Step": s["step"], "Tool": s["tool"],
+                     "Arguments": args,
+                     "Produces": s["purpose"] or "—",
+                     "Bound at run time":
+                         ", ".join(s["resolved_at_runtime"]) or "—",
+                     "Optional": "yes" if s["optional"] else ""})
+    return pd.DataFrame(rows)
+
+
+def _render_briefing(result, goal, key: str):
+    """The 'where to look' block: computed prioritisation, no recommendation."""
+    from agent.briefing import build_briefing, fmt
+
+    b = build_briefing(result, goal)
+    _section("Where to look",
+             "Ranked by impact on operating income, computed in SQL — not "
+             "chosen by the model. Every figure is a tool return value. This "
+             "shows <b>where the money moved and what is underneath it</b>; it "
+             "does not recommend an action, because a recommendation is not a "
+             "number and could not be verified.")
+
+    if not b.available:
+        st.info(b.note or "This run did not rank drivers, so there is nothing "
+                          "to prioritise.")
+        return
+
+    for a in b.areas:
+        colour = "#B91C1C" if a.direction == "unfavorable" else "#15803D"
+        share = (f" · {fmt(a.share, 'percent')} of total impact"
+                 if a.share is not None else "")
+        st.markdown(
+            f"<div style='margin-top:14px'><b>{a.rank}. {esc(a.name)}</b> "
+            f"<span style='color:{colour};font-weight:600'>"
+            f"{esc(fmt(a.oi_impact, 'money'))} {a.direction}</span>"
+            f"<span class='small'>{esc(share)}</span></div>",
+            unsafe_allow_html=True)
+
+        if a.detail:
+            st.dataframe(pd.DataFrame([
+                {"Account": e.label,
+                 "Impact on operating income": fmt(e.value, e.kind)}
+                for e in a.detail]), hide_index=True, width="stretch")
+        cols = []
+        if a.revenue_split:
+            cols.append(("Revenue split (operating-income basis)",
+                         a.revenue_split))
+        if a.comp:
+            cols.append(("Compensation (expense basis · + = spent above plan)",
+                         a.comp))
+        if a.headcount:
+            cols.append(("Headcount", a.headcount))
+        if cols:
+            cc = st.columns(len(cols))
+            for col, (label, items) in zip(cc, cols):
+                col.markdown(f"<div class='small'><b>{esc(label)}</b></div>",
+                             unsafe_allow_html=True)
+                for e in items:
+                    col.markdown(
+                        f"<div class='small'>{esc(e.label)} &nbsp; "
+                        f"<b>{esc(fmt(e.value, e.kind))}</b></div>",
+                        unsafe_allow_html=True)
+    st.caption("Bases are labelled because they differ: account detail is on an "
+               "operating-income basis (negative is unfavourable) while "
+               "compensation variance is on an expense basis (positive means "
+               "spent above plan).")
+
+
+def _ledger_table(ledger):
+    rows = []
+    for e in ledger.entries:
+        src = ""
+        for pname, v in (e.params_declared or {}).items():
+            if isinstance(v, str) and v.startswith("$STEP_"):
+                src = f"{v} → {e.params_resolved.get(pname)}"
+        rows.append({"Step": e.step_idx, "Tool": e.tool,
+                     "Outcome": e.outcome, "Rows": e.row_count,
+                     "Ms": round(e.latency_ms, 1),
+                     "Resolved from": src or "—",
+                     "Result hash": e.result_hash or "—"})
+    return pd.DataFrame(rows)
+
+
+def _metric_row(items):
+    """Lay out metric cards so a figure can never be truncated.
+
+    Streamlit truncates a metric value that does not fit its column with an
+    ellipsis -- silently, with no wrap and no error. That produced
+    "$28,501,6\u2026" on a five-column ARR row: a cut-off number in a tool
+    whose entire claim is that its figures are exact and traceable.
+
+    The constraint is columns, not characters. A four-column row holds an
+    eleven-character value comfortably and a five-column row does not, so the
+    width is chosen from the LONGEST value in the row and the row is wrapped
+    rather than squeezed. Abbreviating to $28.5M was the alternative and was
+    rejected: it would have hidden the truncation rather than fixed it, in the
+    one place precision is the point.
+
+    `items` is a sequence of (label, value) pairs.
+    """
+    items = [(lab, val) for lab, val in items if val is not None]
+    if not items:
+        return
+    longest = max(len(str(v)) for _lab, v in items)
+    per_row = 4 if longest <= 12 else (3 if longest <= 16 else 2)
+    per_row = min(per_row, len(items))
+
+    for start in range(0, len(items), per_row):
+        chunk = items[start:start + per_row]
+        cols = st.columns(per_row)
+        for col, (lab, val) in zip(cols, chunk):
+            col.metric(lab, val)
+
+
+def _render_package_visual(res):
+    """Render the package as metrics and tables rather than a monospace dump.
+
+    The CLI's text block was the right call while debugging and the wrong one
+    for a page an interviewer looks at: it made a finished tool read like a
+    terminal. Sections are keyed on the TOOL that produced them, so an
+    agent-authored plan renders as fully as the deterministic one.
+    """
+    def by_tool(*tools):
+        for name, sec in sorted(res.sections.items(), key=lambda kv: kv[1]["step"]):
+            if sec["tool"] in tools and sec["rows"]:
+                return sec
+        return None
+
+    def money(v):
+        if v is None:
+            return "—"
+        return f"(${abs(v):,.0f})" if v < 0 else f"${v:,.0f}"
+
+    head = by_tool("get_operating_metrics")
+    if head:
+        r = head["rows"][0]
+        _metric_row([
+            ("Revenue", money(r.get("revenue"))),
+            ("Operating income", money(r.get("operating_income"))),
+            ("Headcount", f"{int(r.get('total_headcount', 0)):,}"),
+            ("Ending ARR", money(r["ending_arr"])
+             if r.get("ending_arr") is not None else None),
+        ])
+
+    pl = by_tool("get_pl_summary")
+    if pl:
+        st.markdown("<div class='eyebrow'>Profit &amp; loss versus plan</div>",
+                    unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame([{
+            "Statement line": x["statement_line"],
+            "Actual": money(x["actual"]), "Budget": money(x["base"]),
+            "Impact on operating income": money(x["oi_impact"]),
+            "Direction": "Favorable" if x["favorable"] else "Unfavorable",
+        } for x in pl["rows"]]), hide_index=True, width="stretch")
+
+    for name, sec in sorted(res.sections.items(), key=lambda kv: kv[1]["step"]):
+        rows, tool, params = sec["rows"], sec["tool"], sec.get("params", {})
+        if not rows:
+            continue
+        if tool == "rank_variance_drivers":
+            dim = params.get("dimension", "")
+            st.markdown(f"<div class='eyebrow'>Top drivers by operating-income "
+                        f"impact — {esc(dim)}</div>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Rank": x["rank"], "Driver": x["name"],
+                "Impact on operating income": money(x["oi_impact"]),
+                "Share of total": (f"{x['share_of_total_oi_impact']:.1%}"
+                                   if x.get("share_of_total_oi_impact") is not None
+                                   else "—"),
+                "Direction": "Favorable" if x["favorable"] else "Unfavorable",
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "decompose_variance":
+            dept = rows[0].get("department_name") or params.get("department_id", "")
+            st.markdown(f"<div class='eyebrow'>Decomposition — {esc(dept)}</div>",
+                        unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Rank": x["rank"], "Account": x["account_name"],
+                "Actual": money(x["actual"]),
+                "Impact on operating income": money(x["oi_impact"]),
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "get_comp_decomposition":
+            st.markdown("<div class='eyebrow'>Compensation — headcount versus "
+                        "rate</div>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Department": x.get("department_name"),
+                "Salary variance": money(x["salary_variance"]),
+                "Headcount effect": money(x["hc_impact"]),
+                "Rate effect": money(x["rate_impact"]),
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "get_revenue_decomposition":
+            x = rows[0]
+            st.markdown("<div class='eyebrow'>Revenue — volume versus price</div>",
+                        unsafe_allow_html=True)
+            _metric_row([
+                ("Revenue variance", money(x["rev_variance"])),
+                ("Volume effect", money(x["volume_impact"])),
+                ("Price effect", money(x["price_impact"])),
+            ])
+        elif tool == "get_arr_bridge":
+            x = rows[0]
+            st.markdown("<div class='eyebrow'>ARR movement</div>",
+                        unsafe_allow_html=True)
+            # Balances and flows are laid out separately: they differ by two
+            # orders of magnitude, so a row wide enough for $477,228 is far
+            # too narrow for $28,501,685.
+            _metric_row([("Starting ARR", money(x["starting_arr"])
+                          if x.get("starting_arr") is not None else None),
+                         ("Ending ARR", money(x["ending_arr"])
+                          if x.get("ending_arr") is not None else None)])
+            _metric_row([(lab, money(x[k]) if x.get(k) is not None else None)
+                         for k, lab in [("new_arr", "New"),
+                                        ("expansion_arr", "Expansion"),
+                                        ("contraction_arr", "Contraction"),
+                                        ("churned_arr", "Churn")]])
+        elif tool == "compare_periods":
+            st.markdown(f"<div class='eyebrow'>Change versus "
+                        f"{esc(str(params.get('period_b',''))[:7])} — "
+                        f"{esc(params.get('dimension',''))}</div>",
+                        unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Rank": x["rank"], "Item": x["name"],
+                "This period": money(x["actual_a"]),
+                "Compared period": money(x["actual_b"]),
+                "Change": money(x["change"]),
+                "Impact on operating income": money(x["oi_impact_of_change"]),
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "rank_mom_movers":
+            st.markdown("<div class='eyebrow'>Largest movers since last "
+                        "month</div>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Rank": x["rank"], "Item": x["name"],
+                "Actual": money(x["actual"]),
+                "Change": money(x["change_vs_prior_month"]),
+                "Impact on operating income": money(x["oi_impact_of_change"]),
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "rank_persistent_drivers":
+            st.markdown("<div class='eyebrow'>Persistent drivers — how often, "
+                        "not how big</div>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Rank": x["rank"], "Item": x["name"],
+                "Months unfavorable": f"{x['months_unfavorable']} of "
+                                      f"{x['months_observed']}",
+                "Cumulative impact": money(x["cumulative_oi_impact"]),
+                "Worst month": money(x["worst_month_oi_impact"]),
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "get_ytd_summary":
+            st.markdown("<div class='eyebrow'>Year to date versus plan</div>",
+                        unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Statement line": x["statement_line"],
+                "Actual YTD": money(x["actual_ytd"]),
+                "Budget YTD": money(x["budget_ytd"]),
+                "Impact on operating income": money(x["oi_impact_ytd"]),
+                "Direction": "Favorable" if x["favorable"] else "Unfavorable",
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "get_account_trend":
+            st.markdown(f"<div class='eyebrow'>"
+                        f"{esc(str(rows[0].get('account_name','')))} — "
+                        f"month by month</div>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Month": str(x["month"])[:7], "Actual": money(x["actual"]),
+                "Budget": money(x["budget"]),
+                "Impact on operating income": money(x["oi_impact"]),
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "get_opex_ratio_trend":
+            st.markdown(f"<div class='eyebrow'>"
+                        f"{esc(str(rows[0].get('department_name','')))} opex as "
+                        f"a share of revenue</div>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Month": str(x["month"])[:7],
+                "Department opex": money(x["dept_opex"]),
+                "Company revenue": money(x["revenue"]),
+                "Opex % of revenue": f"{x['dept_opex_pct_revenue']:.1%}",
+            } for x in rows]), hide_index=True, width="stretch")
+        elif tool == "get_headcount_movement":
+            st.markdown("<div class='eyebrow'>Headcount versus plan</div>",
+                        unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{
+                "Department": x.get("department_name"),
+                "Actual": x["actual_headcount"], "Plan": x["budget_headcount"],
+                "Versus plan": f"{x['hc_var_vs_budget']:+d}",
+            } for x in rows]), hide_index=True, width="stretch")
+
+    if res.missing_sections:
+        st.warning("Promised sections not produced: "
+                   + ", ".join(res.missing_sections))
+
+
+def _deliverables(res, goal, candidate, packet, key: str):
+    """Every artifact a run can produce, in one place.
+
+    The deck sat in one section and the Word documents in another, so a reader
+    had to discover that the tool produced four different things. They are one
+    idea -- what this run can hand you -- and they belong under one heading,
+    each stating what it produces BEFORE the button is pressed.
+    """
+    from agent.reports import (build_flash, build_memo, build_packet,
+                               department_ids)
+
+    DOCX = ("application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document")
+    PPTX = ("application/vnd.openxmlformats-officedocument."
+            "presentationml.presentation")
+    period = str(goal.get("period", ""))[:7]
+
+    st.markdown(
+        "<div style='font-size:1.2rem;font-weight:700;color:#0F172A;"
+        "letter-spacing:-0.01em;margin:2px 0 4px'>Deliverables</div>",
+        unsafe_allow_html=True)
+    st.markdown(
+        "<div style='color:#0F172A;font-size:0.92rem;line-height:1.5;"
+        "margin-bottom:6px'>Every figure in every artifact below is a value "
+        "computed in SQL and verified against the run ledger. The generators "
+        "cannot compute a number \u2014 there is exactly one way a figure "
+        "reaches a page, and it is by having been retrieved.</div>",
+        unsafe_allow_html=True)
+
+    def block(title, what, button, state, builder, mime):
+        st.markdown(f"<div style='color:#0F172A;font-weight:700;font-size:"
+                    f"1.02rem;margin-top:16px'>{esc(title)}</div>",
+                    unsafe_allow_html=True)
+        st.markdown(f"<div style='color:#0F172A;font-size:0.9rem;"
+                    f"line-height:1.45;margin-bottom:6px'>{what}</div>",
+                    unsafe_allow_html=True)
+        if st.button(button, key=f"{key}_{state}_go"):
+            with st.spinner("Building\u2026"):
+                st.session_state[f"{key}_{state}"] = builder()
+        made = st.session_state.get(f"{key}_{state}")
+        if not made:
+            return
+        for i, (fname, data, figures) in enumerate(made):
+            c1, c2 = st.columns([2, 3])
+            c1.download_button(fname, data=data, file_name=fname, mime=mime,
+                               key=f"{key}_{state}_dl_{i}")
+            c2.markdown(f"<div class='small' style='padding-top:8px'>"
+                        f"{figures} traced figures</div>",
+                        unsafe_allow_html=True)
+
+    def _deck():
+        from agent.deck import deck_bytes
+        data, prov = deck_bytes(res, goal, candidate, packet)
+        return [(f"variance-review-{period}.pptx", data, len(prov))]
+
+    block("Board deck (PowerPoint)",
+          "Eleven slides: executive summary, where to look, the driver "
+          "ranking, account detail, compensation, revenue split, ARR and "
+          "headcount \u2014 plus an appendix carrying the full run ledger. "
+          "Charts are native PowerPoint objects rather than images, so a "
+          "reader can click a bar and see the numbers behind it.",
+          "Build the deck", "deck", _deck, PPTX)
+
+    def _flash():
+        r = build_flash(res, goal, candidate, packet)
+        return [(f"flash-{period}.docx", r.to_bytes(), len(r.provenance))]
+
+    block("Flash results (Word)",
+          "Half a page for the CFO on day three or four, before the full "
+          "close package exists: headline results, performance against plan, "
+          "and the single largest driver. Deliberately short \u2014 the "
+          "reader is deciding in thirty seconds whether anything needs "
+          "attention today.",
+          "Build the flash", "flash", _flash, DOCX)
+
+    def _memo():
+        r = build_memo(res, goal, candidate, packet)
+        return [(f"memo-{period}.docx", r.to_bytes(), len(r.provenance))]
+
+    block("Monthly variance commentary (Word)",
+          "The full memo: results against plan, where the variance came from, "
+          "the compensation and revenue decompositions, headcount, and the "
+          "audited commentary. Ends with an <b>intentionally blank</b> "
+          "assessment section \u2014 the tool assembles every fact and you "
+          "supply the judgment.",
+          "Build the memo", "memo", _memo, DOCX)
+
+    depts = department_ids(res)
+
+    def _packets():
+        out = []
+        for dept in depts:
+            r = build_packet(res, goal, dept, candidate, packet)
+            out.append((f"packet-{period}-{dept}.docx", r.to_bytes(),
+                        len(r.provenance)))
+        return out
+
+    block(f"Budget owner packets (Word \u2014 {len(depts)} documents)",
+          "One document per department, each containing <b>only that owner's "
+          "numbers</b>: their account detail, their headcount against plan, "
+          "space for their explanation and a sign-off block. Writing these by "
+          "hand every month is the highest-volume, lowest-judgment task in "
+          "the close \u2014 this is the one the automation actually removes.",
+          f"Build all {len(depts)} packets", "packets", _packets, DOCX)
+
+
+def _render_narrative_block(narr: dict, key_prefix: str):
+    """Narrative + audit trace, from either a live candidate or a cached run."""
+    text = narr.get("text") or ""
+    if not text:
+        st.warning("No commentary was produced. Nothing is published rather than "
+                   "risk an unsupported statement.")
+        if narr.get("reason"):
+            st.caption(narr["reason"])
+        return
+
+    narr_box(text)
+
+    src = narr.get("source")
+    if src == "model":
+        label = "model-written, every figure verified against the run ledger"
+    elif narr.get("deterministic_by_choice"):
+        label = "deterministic narrative — no model was called"
+    else:
+        label = "deterministic fallback — the model's drafts failed the audit"
+    st.caption(f"{label} · {len(narr.get('matched') or [])} figure(s) verified"
+               + (f" · {narr['attempts']} model attempt(s)" if narr.get("attempts") else ""))
+
+    matched = narr.get("matched") or []
+    if matched:
+        st.markdown("<div class='eyebrow'>Audit trace</div>", unsafe_allow_html=True)
+        st.markdown("<div class='small'>Every figure in the prose, tied to the "
+                    "computed value behind it. Nothing else was permitted.</div>",
+                    unsafe_allow_html=True)
+        chips = [f"<span class='chip'>{esc(m[0])}"
+                 f"<span class='lbl'>{esc(m[2])}</span></span>" for m in matched]
+        st.html(f"<div class='tracewrap'>{' '.join(chips)}</div>")
+
+    for v in (narr.get("violations") or []):
+        st.error(f"rejected: {v['mention']} — {v['reason']}")
+
+
+def _gate1_panel(packet, blocking, state_key: str):
+    """The human sign-off. Nothing is published without it.
+
+    Reworded from "Gate 1 · pre-publication approval" because that is internal
+    vocabulary: a reader outside the project cannot tell what a gate is, or
+    what they are being asked to do. The instruction is now the heading.
+    """
+    _section("Sign off before this is used",
+             "The figures are already verified against the data. What a human "
+             "confirms here is that the <b>reading</b> is right — a conclusion "
+             "can be wrong even when every number in it is correct. Nothing is "
+             "published, and no deck can be produced, until someone signs.")
+
+    if not packet.audit_ok:
+        st.error("**Blocked — a figure failed verification.** This cannot be "
+                 "signed off. Sign-off is not an override: a number that does "
+                 "not trace back to the data must never be publishable by "
+                 "anyone.")
+        for r in blocking:
+            st.markdown(f"<div class='small'>· {esc(r)}</div>", unsafe_allow_html=True)
+        return
+
+    if packet.published:
+        a = packet.approval
+        st.success(f"**Signed off** by {a.approver or 'reviewer'} — "
+                   f"this package is cleared for use.")
+        st.caption(f"Recorded against this exact package (`{a.artifact_hash}`). "
+                   f"If the figures or the commentary change, the sign-off no "
+                   f"longer applies and it must be reviewed again.")
+        if a.note:
+            st.caption(a.note)
+        return
+
+    if packet.approval.is_approval and not packet.approval_is_current:
+        st.warning("This changed after it was signed off, so the earlier "
+                   "sign-off no longer applies. Please review it again.")
+
+    approver = st.text_input("Your name", value="", placeholder="e.g. R. Galasso",
+                             key=f"{state_key}_who")
+    note = st.text_input("Note (optional)", value="", key=f"{state_key}_note")
+    c1, c2, c3 = st.columns(3)
+    if c1.button("Sign off", type="primary", key=f"{state_key}_ok",
+                 disabled=not approver):
+        packet.approve(approver, note)
+        st.rerun()
+    if c2.button("Send back for revision", key=f"{state_key}_rev",
+                 disabled=not approver):
+        packet.reject(approver, note, revision=True)
+        st.rerun()
+    if c3.button("Reject", key=f"{state_key}_no", disabled=not approver):
+        packet.reject(approver, note)
+        st.rerun()
+
+    if not approver:
+        st.caption("A name is required: a sign-off with nobody attached to it "
+                   "is not a sign-off.")
+    if packet.approval.decision in ("REJECTED", "REVISION_REQUESTED"):
+        st.info(f"Recorded: {packet.approval.decision} by "
+                f"{packet.approval.approver}"
+                + (f" — {packet.approval.note}" if packet.approval.note else ""))
+
+
+def page_agent():
+    A = _agent_imports()
+
+    st.markdown("<div class='eyebrow'>Close-cycle agent</div>", unsafe_allow_html=True)
+    st.markdown("<div class='headline'>Plan → validate → execute → audit → approve</div>",
+                unsafe_allow_html=True)
+    st.markdown("<hr class='rule'/>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='small'>A model proposes a <b>plan</b>; it never executes "
+        "anything and never states a figure it did not retrieve. Static "
+        "validation is a hard barrier before any query runs. Every number in the "
+        "commentary is a tool return value, verified against the run ledger. "
+        "Nothing is published without a human decision.</div>",
+        unsafe_allow_html=True)
+
+    if SC.diff_from_default():
+        st.info(
+            "**The agent runs against the materialized baseline marts, not your "
+            "scenario edits.** The marts are a build artifact — in production "
+            "they would be a scheduled dbt run, not a per-user recomputation — "
+            "so the agent's figures here reflect the committed dataset. The "
+            "other pages reflect your edits.")
+
+    period = str(sel_month)[:7]
+    st.markdown(f"<div class='small'>Analyzing <b>{esc(month_label(sel_month))}"
+                f"</b>, the reporting month selected in the sidebar.</div>",
+                unsafe_allow_html=True)
+
+    st.markdown("---")
+    # Two modes, deliberately. A third "verified replay" tab served a committed
+    # run and rendered the SAME package as "Run now" with an integrity banner
+    # most readers could not interpret -- three modes where two looked
+    # identical cost more in confusion than the point was worth. The replay
+    # machinery stays (replay.py, the hash checks, verify_decks.py, the tamper
+    # tests): it is what the claim rests on, it just does not need a tab.
+    mode = st.radio(
+        "Mode",
+        ["Standard monthly close", "Ask a question"],
+        horizontal=True, label_visibility="collapsed",
+        help="The standard close runs the same fixed plan every month. "
+             "Ask a question lets a model plan for something the fixed plan "
+             "does not cover.")
+
+    if mode.startswith("Standard"):
+        _agent_now(A, period)
+    else:
+        _agent_live(A, period)
+
+
+@st.cache_resource(show_spinner=False)
+def _agent_run_for(period: str, _stamp: str):
+    """Deterministic package + commentary for one month.
+
+    Cheap enough to run on demand -- eleven tool calls take about 40ms and no
+    credential -- which is why the agent page can follow the sidebar month
+    instead of being pinned to whatever happened to be cached. `_stamp` is the
+    mart build hash, so the cache invalidates when the data underneath moves.
+
+    cache_resource rather than cache_data: these are live objects with methods
+    the page calls, not picklable frames.
+    """
+    from agent import materialize as agent_mz
+    from agent import tools as _t  # noqa: F401
+    from agent.gates import PublicationPacket, review_plan, summarize_plan
+    from agent.narrate import narrate
+    from agent.orchestrator import Orchestrator
+    from agent.packages import build_goal, variance_package_plan
+
+    con = agent_mz.connect_readonly()
+    try:
+        goal = build_goal(con, period)
+        plan = variance_package_plan(goal)
+        result = Orchestrator(con).run(plan, goal)
+        candidate = narrate(result, goal, client=None, all_entity_names=NAMES,
+                            mode="inject")
+    finally:
+        con.close()
+
+    # The PACKET is deliberately not returned. cache_resource is shared across
+    # every session on the server, so a cached packet would mean one visitor's
+    # sign-off appearing as signed to everyone else -- an approval attached to
+    # no one, on the artifact whose whole point is that a named human accepted
+    # it. The run is shared; the decision is not.
+    review = review_plan(plan, reviewer="deterministic run",
+                         note="hand-written canonical plan")
+    return result, goal, candidate, review, summarize_plan(plan)
+
+
+def _agent_now(A, period: str):
+    """The agent, executed now, for the month selected in the sidebar."""
+    from agent import materialize as agent_mz
+    from agent.gates import blocking_reasons
+
+    try:
+        result, goal, candidate, review, plan_summary = _agent_run_for(
+            period, agent_mz.build_hash())
+    except agent_mz.StaleMartError as e:
+        st.error(f"**The agent marts are stale.** {e}")
+        return
+    except Exception as e:  # noqa: BLE001
+        st.error(f"{type(e).__name__}: {e}")
+        return
+
+    # Built per session, and keyed on the month so that changing months cannot
+    # carry a sign-off onto a different period's package.
+    from agent.gates import PublicationPacket
+
+    pk_key = f"agent_packet_{period}"
+    packet = st.session_state.setdefault(
+        pk_key, PublicationPacket(result, candidate, plan_review=review))
+
+    c = result.ledger.cost_summary()
+    cols = st.columns(4)
+    cols[0].metric("Tool calls", c["steps"])
+    cols[1].metric("Wall clock", f"{c['wall_clock_s']:.3f}s")
+    cols[2].metric("Tokens", f"{c['tokens_in'] + c['tokens_out']:,}")
+    cols[3].metric("Figures verified", len(candidate.matched))
+    st.caption("Hand-written plan, no model in the loop. Every figure below is "
+               "a tool return value.")
+    st.markdown("<div class='small'>This is the <b>fixed monthly close</b>: "
+                "the same eleven steps every period, run against the month "
+                "selected in the sidebar. Use <b>Plan with a model</b> when the "
+                "question is not the standard one.</div>",
+                unsafe_allow_html=True)
+
+    st.markdown("---")
+    _section("Financial performance overview",
+             "The full month: profit and loss against plan, the ranked "
+             "drivers, and the account-level detail behind them. Every figure "
+             "is computed in SQL — the model never performs arithmetic.")
+    _render_package_visual(result)
+    with st.expander("Plain-text package (what the CLI prints)"):
+        st.code(A["render_package"](result), language=None)
+
+    st.markdown("---")
+    _section("Commentary",
+             "Generated from the computed figures above. Every number was "
+             "verified against the run ledger before it could appear.")
+    _render_narrative_block({
+        "text": candidate.text, "source": candidate.source,
+        "attempts": candidate.attempts,
+        "matched": [list(m) for m in candidate.matched],
+        "violations": candidate.violations,
+        "deterministic_by_choice": candidate.deterministic_by_choice,
+        "reason": candidate.reason,
+    }, f"now_{period}")
+
+    st.markdown("---")
+    _gate1_panel(packet, blocking_reasons(packet), f"now_gate1_{period}")
+
+    if packet.published:
+        st.markdown("---")
+        _deliverables(result, goal, candidate, packet, f"now_{period}")
+    else:
+        st.markdown("<div class='small'>The deck becomes available once this "
+                    "package is <b>signed off above</b> — an unsigned deck "
+                    "is exactly the artifact that should not be leaving the "
+                    "building.</div>", unsafe_allow_html=True)
+
+    with st.expander("Run ledger — every tool call, argument, and result hash"):
+        st.dataframe(_ledger_table(result.ledger), hide_index=True,
+                     width="stretch")
+        st.caption("`resolved from` shows a symbolic reference and the value "
+                   "the orchestrator bound to it. Data moves between steps by "
+                   "reference — the model never re-reads a result and retypes "
+                   "a figure.")
+        st.json(c)
+
+
+# The saved-run viewer was removed with its tab. It rendered the same package
+# as the standard close with an integrity banner most readers could not
+# interpret, so keeping it as dead UI code would invite it back. The replay
+# MACHINERY is untouched -- src/agent/replay.py, the hash verification, the
+# tamper tests, verify_decks.py -- because that is what the "these numbers are
+# real" claim actually rests on. It simply does not need a tab.
+
+
+def _agent_live(A, period_default: str = ""):
+    _section(
+        "Plan with a model",
+        "The deterministic run above answers <b>one fixed question</b>. This "
+        "asks the model to plan for a question it has not seen — that is the "
+        "capability an agent actually adds. It costs a fraction of a cent and "
+        "several seconds; the free run above is instant, so use this when the "
+        "question changes, not when it does not. Your key lives in this "
+        "session only: never logged, never written to the ledger.")
+
+    provider = st.radio("Provider", ["OpenAI", "Anthropic"], horizontal=True,
+                        key="agent_provider")
+    key = get_key(provider)
+    env = "OPENAI_API_KEY" if provider == "OpenAI" else "ANTHROPIC_API_KEY"
+
+    if not key:
+        entered = st.text_input(f"{provider} API key", type="password",
+                                key="agent_key_in")
+        if entered:
+            st.session_state[env] = entered
+            os.environ[env] = entered
+            st.rerun()
+        st.info("No key set. **The cached runs above need no key** and show the "
+                "same architecture end to end.")
+        return
+    os.environ[env] = key
+
+    # Example goals that show RANGE. The generic "prepare the variance package"
+    # produces a thinner copy of the free deterministic run, which makes the
+    # model path look redundant -- it is the wrong demonstration of the thing
+    # the model is actually for.
+    EXAMPLES = [
+        "why did operating expenses miss plan this month?",
+        "is this month's miss a one-off or has it been building?",
+        "is the revenue miss a volume problem or a price problem?",
+        "how does this month compare with last month?",
+        "how are we tracking year to date?",
+        "is Sales & Marketing spend growing faster than revenue?",
+        "what is our cash runway?",          # the tools cannot answer this
+        "prepare the full variance package for this period",
+    ]
+
+    c1, c2 = st.columns([3, 2])
+    example = c1.selectbox("Start from an example question", EXAMPLES,
+                           key="agent_example")
+    _ix = next((i for i, m in enumerate(MONTHS)
+                if str(m).startswith(period_default)), len(MONTHS) - 1)
+    period = c2.selectbox("Period", MONTHS, index=_ix,
+                          format_func=month_label, key="agent_period")
+
+    goal_text = st.text_input("Goal — edit freely", value=example,
+                              key=f"agent_goal_{EXAMPLES.index(example)}")
+
+    # The plan-review gate is deliberately NOT surfaced here. It exists in the
+    # orchestrator and the decision log, and it matters for a write-capable
+    # registry -- but on a read-only surface it adds inspectability rather than
+    # safety, and a plan-approval table is unreadable to anyone outside the
+    # project. The plan is still shown after the run, as evidence rather than
+    # as a control the reader is asked to operate.
+    gate0_on = False
+    with st.expander("Run controls"):
+        max_steps = st.slider("Maximum steps (hard cap)", 4, 20, 14)
+
+    thread = st.session_state.get("agent_thread", [])
+    if thread:
+        _section("This session",
+                 "Each question below was planned with the previous answers in "
+                 "view, so a follow-up retrieves only what it still needs "
+                 "rather than starting again.")
+        for i, t in enumerate(thread, start=1):
+            st.markdown(f"<div style='color:#0F172A'>{i}. "
+                        f"<b>{esc(t['goal_text'])}</b> — "
+                        f"{len(t['sections'])} result set(s)</div>",
+                        unsafe_allow_html=True)
+        if st.button("Start a new session"):
+            for k in ("agent_thread", "agent_packet", "agent_pending",
+                      "agent_refusal"):
+                st.session_state.pop(k, None)
+            st.rerun()
+        st.markdown("---")
+
+    # A follow-up re-enters the same planning path with the session thread in
+    # context, so there is one code path for "ask" and "ask again" rather than
+    # two that can drift.
+    followup = st.session_state.pop("agent_followup_pending", None)
+    if st.button("Plan and run", type="primary") or followup:
+        if followup:
+            goal_text = followup
+        st.session_state.pop("agent_packet", None)
+        st.session_state.pop("agent_refusal", None)
+        st.session_state.pop("agent_pending_plan", None)
+        try:
+            con = A["mz"].connect_readonly()
+            goal = A["build_goal"](con, str(period)[:7])
+            client = A["agent_client"](provider.lower())
+            prior = st.session_state.get("agent_thread", [])
+            with st.spinner(f"Planning with {client.model}…"):
+                pr = A["Planner"](client).propose(goal_text, goal,
+                                                  prior_runs=prior)
+            if pr.refused:
+                st.session_state["agent_refusal"] = {
+                    "goal": goal_text, "reason": pr.refusal,
+                    "model": client.model,
+                    "tokens": pr.tokens_in + pr.tokens_out,
+                    "cost": pr.cost_usd if pr.pricing_known else None,
+                }
+                st.session_state.pop("agent_pending", None)
+                st.rerun()
+            st.session_state["agent_last_goal"] = goal_text
+            st.session_state["agent_pending"] = {
+                "plan": pr.plan, "goal": goal, "pr": pr,
+                "period": str(period)[:7], "gate0": gate0_on,
+                "max_steps": max_steps, "client_model": client.model,
+            }
+        except A["PlannerError"] as e:
+            st.error("The planner could not produce a valid plan.")
+            for a in e.attempts:
+                st.caption(f"attempt {a['attempt']}: {a['problems']}")
+            return
+        except Exception as e:  # noqa: BLE001
+            st.error(f"{type(e).__name__}: {e}")
+            return
+        st.rerun()
+
+    refusal = st.session_state.get("agent_refusal")
+    if refusal:
+        st.markdown("---")
+        _section("The agent declined this question",
+                 "The tool surface is deliberately narrow. When a question "
+                 "needs data these tools do not expose, the correct behaviour "
+                 "is to say so — <b>not</b> to answer a different question that "
+                 "happens to be answerable and present it as though it were the "
+                 "one asked.")
+        st.warning(f"**{esc(refusal['goal'])}**\n\n{esc(refusal['reason'])}")
+        cost = (f"${refusal['cost']:.4f}" if refusal.get("cost") is not None
+                else "unpriced")
+        st.caption(f"{refusal['model']} · {refusal['tokens']:,} tokens · {cost} "
+                   f"· no query was run")
+        return
+
+    pending = st.session_state.get("agent_pending")
+    packet = st.session_state.get("agent_packet")
+
+    if pending and not packet:
+        from agent.gates import review_plan, summarize_plan
+
+        pr = pending["pr"]
+        st.markdown("---")
+        st.markdown("<div class='eyebrow'>Proposed plan</div>", unsafe_allow_html=True)
+        st.caption(f"{pending['client_model']} · {len(pr.attempts)} attempt(s) · "
+                   f"{pr.tokens_in + pr.tokens_out} tokens · "
+                   + (f"${pr.cost_usd:.4f}" if pr.pricing_known else "unpriced"))
+        for a in pr.attempts:
+            if not a["accepted"]:
+                st.warning(f"attempt {a['attempt']} rejected by static "
+                           f"validation: {a['problems']}")
+        st.dataframe(_plan_table(summarize_plan(pr.plan)), hide_index=True, width="stretch")
+
+
+        with st.spinner("Executing and auditing…"):
+            packet = _execute_live(A, pending, pr)
+        st.session_state["agent_packet"] = packet
+        # Summaries only, never the rows: replaying full results into the next
+        # prompt would grow without bound and invite the model to quote a
+        # figure from context instead of retrieving it.
+        st.session_state.setdefault("agent_thread", []).append({
+            "goal_text": st.session_state.get("agent_last_goal", ""),
+            "sections": {k: {"step": v["step"], "tool": v["tool"],
+                             "params": v["params"], "rows": v["rows"][:3]}
+                         for k, v in packet.result.sections.items()},
+        })
+        st.rerun()
+
+    if packet:
+        _render_live_packet(A, packet)
+
+
+def _execute_live(A, pending, pr):
+    from agent.ledger import Budget
+
+    con = A["mz"].connect_readonly()
+    goal = pending["goal"]
+    orch = A["Orchestrator"](con, budget=Budget(max_steps=pending["max_steps"]))
+    result = orch.run(pr.plan, goal)
+    result.ledger.record_planning(
+        tokens_in=pr.tokens_in, tokens_out=pr.tokens_out,
+        cost_usd=pr.cost_usd if pr.pricing_known else None,
+        pricing_known=pr.pricing_known, latency_ms=pr.latency_ms,
+        model=pr.model, attempts=len(pr.attempts))
+
+    client = A["agent_client"]()
+    candidate = A["narrate"](result, goal, client, NAMES, mode="audit",
+                             max_retries=1)
+    review = A["review_plan"](pr.plan, reviewer="live session",
+                              note="plan review not surfaced in the UI")
+    return A["PublicationPacket"](result, candidate, plan_review=review)
+
+
+def summarize_plan_safe(result):
+    """Plan summary reconstructed from the ledger when none was recorded."""
+    return [{"step": e.step_idx, "tool": e.tool,
+             "params": e.params_declared, "purpose": "",
+             "optional": False,
+             "resolved_at_runtime": sorted(
+                 k for k, v in (e.params_declared or {}).items()
+                 if isinstance(v, str) and v.startswith("$"))}
+            for e in result.ledger.entries]
+
+
+def _render_live_packet(A, packet):
+    from agent.gates import summarize_plan  # noqa: F401
+
+    result = packet.result
+    goal = result.ledger.goal
+    c = result.ledger.cost_summary()
+
+    st.markdown("---")
+    _section("What the model was asked, and what it did",
+             "The plan was authored for <b>your question</b>, not from a fixed "
+             "template — which is the whole reason to spend a model call here. "
+             "Compare the steps below with the deterministic run: a different "
+             "question produces a different plan.")
+    st.markdown(f"> {esc(st.session_state.get('agent_last_goal', ''))}")
+    cols = st.columns(4)
+    cols[0].metric("Tool calls", c["steps"])
+    cols[1].metric("Planning time", f"{c['planning_latency_ms'] / 1000:.1f}s")
+    cols[2].metric("Tokens", f"{c['tokens_in'] + c['tokens_out']:,}")
+    cols[3].metric("Cost",
+                   f"${c['cost_usd']:.4f}" if c.get("pricing_known")
+                   else "unpriced")
+
+    with st.expander("Steps the model chose (execution order)"):
+        st.dataframe(_plan_table(packet.plan_review.plan_summary
+                                 or summarize_plan_safe(result)),
+                     hide_index=True, width="stretch")
+
+    st.markdown("---")
+    _render_briefing(result, goal, "live")
+
+    st.markdown("---")
+    _section("Supporting detail",
+             "Everything the plan retrieved, in full. This is the evidence the "
+             "prioritisation above rests on.")
+    _render_package_visual(result)
+    with st.expander("Plain-text package (what the CLI prints)"):
+        st.code(A["render_package"](result), language=None)
+
+    c = packet.candidate
+    cand = packet.candidate
+    narr = {
+        "text": cand.text, "source": cand.source, "attempts": cand.attempts,
+        "matched": [list(m) for m in cand.matched],
+        "violations": cand.violations,
+        "deterministic_by_choice": cand.deterministic_by_choice,
+        "reason": cand.reason,
+    }
+    st.markdown("---")
+    _section("Commentary",
+             "Written by the model over the figures above and nothing else. "
+             "Every number in it was checked against the run ledger before it "
+             "could appear; a figure that failed verification would have "
+             "blocked publication entirely.")
+    _render_narrative_block(narr, "live")
+
+    st.markdown("---")
+    _gate1_panel(packet, A["blocking_reasons"](packet), "live_gate1")
+
+    # Deliverables are gated on sign-off in this path too. An unsigned deck or
+    # packet is exactly the artifact that should not be leaving the building.
+    if packet.published:
+        st.markdown("---")
+        _deliverables(packet.result, packet.result.ledger.goal,
+                      packet.candidate, packet, "live")
+    else:
+        st.markdown("<div class='small'>The deck and the Word documents become "
+                    "available once this package is <b>signed off above</b>."
+                    "</div>", unsafe_allow_html=True)
+
+    with st.expander("Run ledger"):
+        st.dataframe(_ledger_table(packet.result.ledger), hide_index=True, width="stretch")
+        st.json(packet.result.ledger.cost_summary())
+
+    st.markdown("---")
+    _section("Ask a follow-up",
+             "The next question is planned with everything above already in "
+             "view, so it retrieves only the delta. This is a conversation "
+             "with a bounded warehouse — every follow-up still produces a plan "
+             "that is validated before a single query runs.")
+    follow = st.text_input("Follow-up question", value="",
+                           placeholder="e.g. break that down by account",
+                           key="agent_followup")
+    if st.button("Ask", disabled=not follow, key="agent_followup_go"):
+        st.session_state["agent_followup_pending"] = follow
+        st.session_state.pop("agent_packet", None)
+        st.rerun()
+
+    if packet.published and st.button("Save this run to the replay store"):
+        from agent.replay import save_run
+        path = save_run(packet.result, packet.candidate, packet,
+                        label=f"live-{packet.result.ledger.run_id}")
+        st.success(f"Saved {os.path.basename(path)}")
+
+
 PAGES = {
     "Overview": page_overview,
     "Variance": page_variance,
     "Forecast": page_forecast,
     "Commentary": page_commentary,
+    "Close-cycle agent": page_agent,
     "Guardrails & Eval": page_eval,
     "ROI": page_roi,
     "Decision log": page_decisions,

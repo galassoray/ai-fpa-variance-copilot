@@ -633,3 +633,172 @@ Not guaranteed: that the CLAIMS are right. "Opex rose because the team hired ahe
 - Scope: display only. The VALUE was already correct in every case, because the negative branch requires both sides -- "($793K)" is -793,000 and "(revenue of $2.60M)" is +2,600,000, both before and after this change.
 - Why it was worth fixing anyway: the audit trace is the signature UI element carried over from the copilot, and it is the thing an interviewer looks at. A dangling parenthesis reads as a broken accounting negative, which invites a question about whether the sign handling is sound -- on the one component whose entire job is to be trustworthy.
 - Tests pin that genuine accounting negatives keep their parentheses, so the hygiene fix cannot quietly become a correctness regression.
+
+
+### Note: an app test must control the environment it asserts about
+- Context: `test_live_mode_without_a_key_informs_rather_than_crashes` passed in CI and failed on the development machine. The app detects a key from `os.environ`, and the shell had `OPENAI_API_KEY` exported from earlier live runs -- so the page correctly showed the run controls instead of the key prompt, and the test's assumption of an empty environment was wrong.
+- Why it matters beyond the one test: a test that passes only on a machine with no credential configured is testing the machine, not the app. The exported-key case is the COMMON one for anyone who has used live mode, so the test was green in exactly the environment nobody develops in.
+- Fix: the test builds its own app instance with the key environment set deliberately, and a complementary test asserts the with-key branch. The pair pins the actual behaviour instead of whatever the developer's shell happens to contain.
+
+
+### Decision: every text-mode file open declares its encoding
+- Context: `test_the_generator_contains_no_arithmetic_on_figures` passed in development and raised `UnicodeDecodeError: 'charmap' codec can't decode byte 0x90` on the Windows machine. `open(path)` in text mode uses the LOCALE encoding -- UTF-8 on Linux, cp1252 on a default Windows install -- so reading a source file containing an em dash works in one place and crashes in the other.
+- The worse finding, which the crash led to: `run_agent.py` and `run_package.py` contain "·" (UTF-8 C2 B7), and cp1252 decodes those bytes without complaint as "Â·". So the model-boundary scan in test_agent_phase2 had been reading MOJIBAKE on Windows and passing. Not a crash -- a wrong read that still returns a string, on a test whose entire job is to inspect source text. The same silent-wrong-answer shape as the original build-hash defect.
+- Also found by the same sweep: `test_formatting_and_signs.py` reads `app.py` (286 non-ASCII bytes) without an encoding and `exec`s a slice of it. It passes only because the mojibake happens to fall outside the sliced region.
+- Choice & why: all thirteen text opens declare `encoding="utf-8"`, and a test walks the source with **AST** -- not a regex, which matched the word "open(" inside its own docstring -- failing on any text-mode open that omits an encoding. Binary opens are exempt because they need none.
+- Related hardening: the CLIs reconfigure stdout/stderr to UTF-8 with `errors="replace"` at entry, so a console that cannot render a middle dot degrades to a placeholder instead of killing a completed run with UnicodeEncodeError. The subprocess test pins `encoding="utf-8"` rather than inheriting the locale.
+- Verified by running the whole suite under `LC_ALL=C` with UTF-8 mode disabled, which reproduces the failure class without a Windows machine.
+
+
+### Decision: the agent page follows the sidebar reporting month
+- Context: every other page in the app responded to the sidebar month; the agent page did not. It was pinned to whichever runs happened to be cached, so changing the month changed the entire app EXCEPT the agent -- which reads as the agent being bolted on rather than part of the tool.
+- Choice & why: the deterministic agent runs on demand for the selected month. Eleven tool calls take about 40ms and no credential, so there was never a reason for it not to follow. Cached replay stops being the only way to see anything and becomes what it is actually for -- demonstrating that a committed artifact re-verifies its hashes on load.
+- Three named modes: **Run now** (deterministic, follows the sidebar month), **Verified replay** (committed runs, integrity re-checked, defaulting to a saved run for the selected month when one exists), and **Plan with a model** (LLM planner, period defaulting to the sidebar month).
+- Gate 1 state is keyed on the month, so switching months cannot carry an approval onto a different period's package -- the same artifact-binding rule as the approval hash, applied to the UI.
+- The run is cached on (period, mart build hash), so the cache invalidates when the data underneath moves rather than serving a stale package under a fresh label.
+- Also corrected: the deck download is withheld until Gate 1 approval in this mode too, and the deck filename carries the selected month, so an approval can never attach to a different period's deck.
+
+### Note: a delivery gap, and a self-inflicted one
+The month-following behaviour was built but never shipped -- the `app.py` packaged in the Phase 6 script was an earlier revision, so the improvement existed locally and not on the machine running it. Worth recording because it is a failure mode no test catches: the tests passed against a working copy that was not what got delivered.
+
+Compounding it, recovering from that state included a `git checkout` on a file with uncommitted work, which destroyed the implementation. The tests survived, and because they were written as a specification rather than as assertions about the code, they were sufficient to rebuild it exactly. That is the strongest argument for spec-shaped tests in this whole project: they were the only surviving record of intended behaviour.
+
+
+### Decision: a figure must START at a word boundary
+- Context: found by verifying three real decks against the canonical computation. One deck's approval hash was `d9434ff7908b617d`, which contains "7908b". The trailing-boundary rule passed it -- the "b" is followed by a digit, not a letter -- so it parsed as $7.908 TRILLION and showed up as a figure with no computed source.
+- Why it is worse than it looks: it is DATA-DEPENDENT. It fires only when a random 16-hex digest happens to contain a digit run followed by k/m/b. Two of the three decks were clean and the third was not, so the deck traceability test passed on the committed demo runs and would have failed intermittently on real ones. An intermittent failure in a verification layer is the kind that gets dismissed as a fluke.
+- Choice & why: a leading `(?<![A-Za-z0-9])` boundary, so a figure must begin at one. Digests, run ids, and "FY2025" now yield nothing, while every legitimate form still parses -- accounting negatives in both notations, magnitude suffixes, percentages. The flagship eval still reports 100% adversarial catch across 40 cases, so the fix removes phantoms without weakening detection.
+- This is the third boundary defect in the same regex (trailing suffix, unbalanced parens, and now leading). The pattern is that a number-extractor is mostly a specification of what is NOT a number, and the negative space is where the defects live.
+
+### Note: verifying the decks against the data, not against the generator
+Three decks were checked by recomputing ground truth from `run_pipeline.compute(load())` -- deliberately not through the marts, the agent, or the deck module's own provenance list, since checking a module against its own bookkeeping proves only self-consistency.
+
+Three questions, in order of severity: does every figure exist in its own month's computation; do the headline figures match exactly; and could the deck belong to a DIFFERENT month. That last one is the failure that would survive every internal check -- a deck that is internally consistent and for the wrong period.
+
+Result: 100% of figures matched (72, 72, and 76 text figures; 37 charted values each), headline figures exact, and each deck best-matched its own month by a wide margin (69/69 vs 8 for the next best, 68/68 vs 9, 74/74 vs 13). No cross-month contamination.
+
+The first run of the checker reported the decks' correct driver shares as unmatched, because the shares are derived in SQL and absent from the pandas outputs used as ground truth. A gap in the CHECKER, not the deck -- and a reminder that a verification script needs the same scrutiny as the thing it verifies. `verify_decks.py` is committed so the check is repeatable rather than a one-off.
+
+
+### Note: a false green in my own verification harness
+The script that shipped the hex-digest fix printed "DECKS VERIFIED - each matches its own month" immediately after `verify_decks.py` had crashed with a traceback.
+
+Two causes, both mine. `verify_decks.py` had a sandbox path hardcoded, so it could not run on the target machine at all. And the PowerShell wrapper never checked `$LASTEXITCODE` after that step -- `$ErrorActionPreference = "Stop"` traps cmdlet errors but NOT a non-zero exit from a native executable, so the script sailed past a failed verification and printed the success banner.
+
+That is the same defect class this project keeps finding, now in the harness that reports on the other checks: a verifier that fails green. It is worth recording rather than quietly fixing, because "how do you know your guardrails work?" has a better answer when the honest one includes the times they did not.
+
+Fixes: `verify_decks.py` discovers decks in the repo root, infers each period from the filename with a title-slide fallback, and returns 0 / 1 / 2 so it is usable as a build gate. Every step in the wrapper now tests its own exit code, and the success banner is unreachable unless verification returned 0. The checker itself was proved by running it against a deck deliberately labelled for the wrong month -- it reported 3 of 69 figures matching and flagged cross-month contamination -- because a check that has never failed is not known to work.
+
+
+### Decision: the agent shows where to look; it does not recommend what to do
+- Context: the live model path produced a thinner copy of the free deterministic run -- slower, costlier, less complete. The obvious fix is to have the model recommend actions ("cut paid marketing 15% next quarter"), which is what most agent demos do.
+- Why that was rejected: a recommendation is not a retrieved number. Nothing can trace it, the audit has nothing to check it against, and the publication gate would pass it through untouched -- every guardrail here catches a wrong FIGURE. We had already watched the milder version fail live: the model wrote "Operating Expenses ... Corporate / Company ($76,065.38 over budget)" when CORP holds no opex and the sign was inverted. Every magnitude was real, so the audit passed it. Prescriptive advice is that failure mode promoted to a feature.
+- The second reason is what it costs in the room. "What happens when it recommends something wrong?" currently has a strong answer -- the model never asserts anything unverifiable. With recommendations the answer becomes "a human reviews it", which is what everyone says.
+- Choice & why: `briefing.py` answers a different question in code -- where did the money move, how much, and what is underneath it. Ranking, the materiality cut (Pareto to 80% coverage, capped at four, 3% floor), and which detail attaches to which driver are all computed. Every displayed figure is a ledger value carried by reference. The cumulative share that decides the cut is used for SELECTION only and never displayed, because publishing it would mean publishing a figure this module derived.
+- The framing that makes it strong rather than a limitation: this is an automated, trustworthy, very fast way to put an analyst in front of the exact evidence a decision needs. The judgment stays with the analyst; the tool removes the hours of assembly. Tests assert the module states no imperative and performs no arithmetic on a figure.
+
+### Decision: supporting groups carry their basis
+- Context: the first briefing printed "Salaries ($67,061)" -- operating-income basis, negative is unfavourable -- directly beside "salary variance $67,061" -- expense basis, positive means spent above plan. Same department, same month, opposite signs, no explanation.
+- Choice & why: account detail, compensation, headcount, and the revenue split are kept as separate labelled groups rather than flattened into one list, each stating its basis. This is the same class of confusion that produced the CORP-as-opex error earlier, caught this time before it reached a reader.
+
+### Decision: the live path demonstrates goal generality, not the same package again
+- Context: the goal box was prefilled with "prepare the variance package for this period", which is exactly what the free deterministic run already does -- so the model path looked redundant and expensive.
+- Choice & why: the page now offers example questions that show range ("why did operating expenses miss plan?", "is the revenue miss a volume problem or a price problem?"), because answering a question nobody anticipated is the capability an agent actually adds. The header says plainly that the deterministic run answers one fixed question and this answers a new one, so a visitor understands when each is the right tool.
+
+### Decision: Gate 0 is off by default, and the plan table reads in execution order
+- Context: Gate 0 defaulted on, so a plan-approval table was the first thing a visitor saw -- before any result existed to give it meaning. Worse, the grid sorted by section name, so a five-step plan rendered 3, 2, 4, 1, 5.
+- Choice & why: sequence is the entire content of a plan; a plan you cannot read in order is not a plan. The table now sorts on step and shows full arguments. Gate 0 moved into a Run controls expander, defaulted off, and is framed for what it is -- inspectability on a read-only surface, and a seam that a write-capable registry would require.
+
+### Decision: every output section is titled and explained
+- Context: someone landing on the page cold had to infer what each block was.
+- Choice & why: each section carries a heading and one line on what it is and why it matters -- what the model was asked and what it did, where to look, the full performance overview, the commentary and how it was verified, and what Gate 1 is for. The explanations state the guarantees in the place a reader encounters them rather than leaving them to a README nobody opens.
+
+
+### Decision: the tool surface was the reason plans looked canned, not the prompt
+- Context: every question given to the planner produced roughly the same four or five calls, so "Plan with a model" read as a slower, costlier copy of the fixed monthly close.
+- Diagnosis: all eleven original tools answered variations of ONE question -- what happened this month against plan. A planner cannot produce a distinctive plan for "is this a one-off or a pattern?" when nothing in the registry can look across months. No amount of prompting fixes a surface that cannot express the question.
+- Choice & why: six comparative and trend tools, each mapped to a question an analyst actually asks and each reading a mart the deterministic package never touched: `compare_periods`, `get_ytd_summary`, `rank_persistent_drivers`, `get_account_trend`, `get_opex_ratio_trend`, `rank_mom_movers`. Seventeen tools total.
+- The most valuable is `rank_persistent_drivers`, which ranks by how many of the last N months a line was unfavourable rather than by this month's size: "Subscription Revenue missed in 6 of 6 months, cumulative -$437,617" is a different finding from "this month's biggest driver", and separating a pattern from a one-off is exactly the judgment a monthly package cannot make for you.
+- Held to the same standard as the originals: parity against the canonical pandas layer, operating-income impact rather than raw variance, bounded windows, declared output types for reference type-checking.
+
+### Decision: refusal is a planner outcome, not a planner failure
+- Context: a narrow tool surface means some questions cannot be answered. The behaviour that must not happen is answering a DIFFERENT question the tools do support and presenting it as though it were the one asked -- the plausible-and-wrong failure this architecture exists to prevent, one level up from a fabricated number.
+- Choice & why: the planner may return `{"refusal": "..."}`, which raises `PlannerRefusal` -- deliberately distinct from `PlannerError`, because failing to plan is a defect while declining an out-of-scope question is correct. A refusal with steps attached is NOT honoured as a refusal, so a model cannot decline in prose while still querying.
+- One of the example questions ("what is our cash runway?") is deliberately unanswerable, so the behaviour is demonstrable rather than described.
+
+### Decision: follow-ups plan the delta, with summaries and never rows
+- Context: a one-shot planner is a form that takes a question. An agent is something you can follow up with.
+- Choice & why: prior runs in the session are passed to the planner as a compact digest -- the question asked, the tools called, and a few row labels. Never the rows: replaying full results would grow the prompt without bound across a conversation and would invite the model to quote a figure from context rather than retrieve it, which is precisely the transcription failure symbolic references were built to prevent. The prompt states explicitly that `$STEP_n` cannot reach an earlier run's ledger.
+- Every follow-up still produces a plan that static validation gates before a single query runs, so the conversation is bounded exactly like a first question.
+
+### Decision: two modes, and the plan-review gate is not one of them
+- Context: three modes, two of which rendered an identical package. And the plan-review table was the first thing a visitor saw -- internal vocabulary, presented as a control they were expected to operate.
+- Choice & why: the modes are now "Standard monthly close" and "Ask a question", which are obviously different things. The saved-run viewer was deleted rather than left as dead UI code that would invite itself back; the replay MACHINERY is untouched, because the hash verification and tamper tests are what the "these numbers are real" claim rests on -- it simply does not need a tab. The plan-review gate stays in the orchestrator and the decision log; the plan is still shown after a run, as evidence rather than as a gate.
+
+### Decision: the sign-off is written for a reader, not for the codebase
+- Context: "Gate 1 · pre-publication approval" tells someone outside the project nothing about what they are being asked to do.
+- Choice & why: the instruction is now the heading -- "Sign off before this is used" -- and the body states the actual division of labour: the figures are already verified against the data, and what a human confirms is that the READING is right, because a conclusion can be wrong while every number in it is correct. Section headings and body copy moved from muted grey to near-black, because this is the copy a first-time reader depends on and grey at that size is hard to read on a projector.
+
+
+### Decision: a tool's output fields must be registered everywhere downstream, and a test enforces it
+- Context: "how does this month compare with last month?" ran perfectly -- the plan validated, `compare_periods` returned five rows -- and then produced "insufficient data for variance commentary" with 0 figures verified.
+- Root cause: six comparative tools were added and NONE of their output fields were registered in `facts._FIELD_KINDS`. The tools ran, returned rows, and contributed nothing to the audit whitelist, so the model could see the data and was not permitted to state any of it. A field the model can see but cannot state is worse than one it cannot see at all: the run looks successful and the output is empty.
+- The systemic problem: adding a tool required touching the whitelist, the canonical fact mapping, the briefing, the app renderer, and the deck -- five places, none of which failed loudly when missed.
+- Choice & why: a parametrised test now runs EVERY registered tool, reads back every numeric field it returns, and fails on any that `_FIELD_KINDS` does not know about or that is not explicitly listed as non-narratable. A second test asserts every tool contributes to a usable fact pack, and a third asserts the tool list in the test matches the registry -- so adding a tool forces confirmation that the layers below it handle it.
+- It found four more gaps immediately, in the ORIGINAL tools: `get_account_trend` returns `budget` (the rest of the codebase calls the same concept `base`), so a trend could be narrated with its actuals but not its plan; and the `bridge_diff` / `decomp_residual` remainders were unstatable, though "the split ties exactly" is a real claim worth being able to make.
+
+### Decision: any ranking tool can seed the briefing, and the basis is stated
+- Context: the briefing only recognised `rank_variance_drivers`, so a persistence or month-over-month question ran successfully and then reported "nothing to prioritise" -- refusing to summarise a run that had produced exactly the ranking it needed.
+- Choice & why: four ranking tools can seed it, each declaring which field carries the impact, because `compare_periods` ranks on the change while persistence ranks on the cumulative total. The briefing now carries a `basis` string and states it -- "ranked by impact of the change since last month" versus "ranked by impact on operating income versus plan" -- because those answer different questions and a reader must not have to infer which one they are seeing.
+
+### Decision: direction follows the impact sign, not a flag that may not exist
+- Context: `favorable` is returned by the versus-plan tools but not by the comparative ones, so reading it directly labelled every month-over-month row "unfavorable" -- including Subscription Revenue, which had RISEN $25,633.
+- Choice & why: direction is derived from the sign of whichever impact field the ranking is built on, which is defined for every ranking tool. Third instance of the same class in this build -- raw variance at rollup grain, expense basis beside operating-income basis, and now a missing flag -- and the lesson each time is that a sign convention has to be carried explicitly rather than inferred from whatever column happens to be present.
+- Also fixed: account names repeat across departments, so a briefing could list "Salaries" twice with different figures. Colliding names now carry their member id.
+
+### Decision: the deterministic narrative falls back to the briefing
+- Context: the copilot's `injection_narrative` reads a fixed schema -- revenue versus budget, top drivers, the ARR bridge -- and produces nothing for a run that filled none of those slots. So a comparative question fell back to empty prose and was unpublishable.
+- Choice & why: when the canonical narrative yields nothing, the text is generated from the briefing instead. Every figure there is already a ledger value carried by reference, so the audit verifies it identically -- and it states no recommendation, for the same reason the briefing does not.
+
+
+### Decision: three Word deliverables, with the packet as the point
+- Context: the deck is the board-facing artifact. The documents that actually circulate in a monthly close are Word: a flash to the CFO on day three or four, the monthly variance commentary, and a budget-owner packet per department.
+- Choice & why: `reports.py` builds all three. The **packet** is the reason the module exists -- writing five of them by hand every month, pulling one owner's lines out of the close pack, formatting, mailing, chasing the reply, is the highest-volume and lowest-judgment task in the cycle, and it is the one automation should remove entirely. It is also the clearest hours-saved story: five documents from one run, each containing only that owner's numbers, each with a sign-off block.
+- Same rule as the deck, for the same reason: exactly one way a number reaches a page (`Report.fig()`), no arithmetic on a financial value anywhere in the module, and a test that re-opens each generated `.docx`, reads every paragraph and table cell back out, and audits them with the same numeric auditor used on the commentary.
+- A test also asserts a packet contains only its own department's accounts. In a real organisation that is not a formatting preference.
+
+### Decision: the recommendation section is present and deliberately blank
+- Context: the standard variance-commentary format ends with a recommendation. This tool does not generate one, because a recommendation is not a retrieved number and nothing could verify it.
+- Choice & why: every document carries the section as an explicitly empty box with a grey note: "Intentionally blank. This tool reports what the data shows and does not recommend action -- that judgment belongs to the analyst, who signs below." That is not a gap being papered over; it is the division of labour made visible on the page, and it is the honest description of the workflow -- the tool assembles every fact, the analyst supplies the judgment and signs for it.
+- Tests assert the section exists in all three document types AND that no document quietly advises in its prose while the box claims it does not.
+
+### Decision: the monthly plan decomposes every department, not the top two
+- Context: the plan stopped at two on the reasoning that a monthly package only needs the largest drivers.
+- Why that was wrong: it cost about ten milliseconds to fix -- three additional local queries -- and it left the package genuinely incomplete. A close pack that explains two of five departments is not the whole picture, and it cannot produce a variance packet for the three owners it skipped. Fourteen steps, still around forty milliseconds.
+- Consequence caught immediately by an existing invariant: `driver_detail_by_account` was capped at ten rows while all twenty-four were whitelisted, so the model was permitted to state figures it could not read -- the same silent failure as an unregistered field. The cap is gone.
+
+### Note: a sign-off that leaked between sessions
+`_agent_run_for` is cached with `st.cache_resource`, which is shared across every session on the server, and it originally returned the `PublicationPacket` as well as the run. So one visitor signing off would make the package appear signed to every other visitor of the deployed app -- an approval attached to nobody, on the one artifact whose entire purpose is that a named human accepted it.
+
+Found by a test that signed off in one app instance and then found the documents already unlocked in a fresh one. The run is shared because it is deterministic and identical for everyone; the decision is not, and is now built per session.
+
+### Note: two silent no-op edits in one session
+Two source edits in this session did nothing and reported success anyway -- a `.replace()` whose target string had drifted, printing "truncation removed" when it had removed nothing, and an app wiring whose target no longer existed. Both were caught only because the next check disagreed with the message.
+
+Every scripted edit now asserts that it changed the file and that the intended state holds afterwards, rather than printing a success line unconditionally. It is the same lesson as the rest of this project in miniature: the report that something worked is not evidence that it worked.
+
+
+### Decision: one Deliverables section, four buttons, each explained before it is pressed
+- Context: the deck sat under one heading and the Word documents under another, so a reader had to discover that the tool produced four different artifacts, and neither section said what a button would produce until after it had been pressed.
+- Choice & why: a single **Deliverables** heading with four blocks -- board deck, flash, monthly memo, and all budget-owner packets -- each carrying a sentence on what it produces and who it is for BEFORE the button. They are one idea (what this run can hand you) and belong under one heading; splitting them by file format was organising the page around the implementation rather than the reader.
+- Each build is independent, so producing the deck does not rebuild the documents, and the download button is labelled with the filename itself rather than the word "Download" wrapped around it -- the artifact is the thing, not the instruction.
+- The packet block states the count from the run rather than assuming five, so a period with fewer departments reads correctly.
+- Everything stays behind sign-off. An unsigned deck or packet is exactly the artifact that should not be leaving the building, and that rule now applies to all four in one place instead of two.
+
+
+### Decision: metric rows size themselves to their longest value
+- Context: the ARR block rendered five metrics in one row and Streamlit truncated the eight-figure balances to "$28,501,6\u2026". A cut-off number in a tool whose entire claim is that its figures are exact and traceable.
+- The constraint is COLUMNS, not characters. Every metric value in the app is eleven characters or fewer; a four-column row holds eleven comfortably and a five-column row does not. Patching the one row would have left the next five-column layout free to do the same thing.
+- Choice & why: `_metric_row()` takes the label/value pairs, measures the LONGEST value, picks the row width from it (four up to twelve characters, three up to sixteen, two beyond), and wraps rather than squeezes. Absent values are dropped rather than rendered blank. Every metric row on the agent page goes through it.
+- Abbreviating to $28.5M was the alternative and was rejected: it would have hidden the truncation rather than fixed it, in the one place precision is the point. Balances and flows are also laid out separately, which is the same split the deck already makes for the same reason -- they differ by two orders of magnitude.
+- Mechanism rather than care: a unit test drives `_metric_row` directly with short, long and absent values; a source check fails on any row wider than four columns; and a rendered check across four periods asserts no metric contains an ellipsis and none exceeds the four-column budget. ARR climbs across the dataset, so a layout that fits in January may not in December -- the test covers both ends.

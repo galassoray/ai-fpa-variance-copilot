@@ -69,6 +69,19 @@ class PlannerError(RuntimeError):
         self.attempts = attempts
 
 
+class PlannerRefusal(RuntimeError):
+    """The model declined the question because the tools cannot answer it.
+
+    Deliberately distinct from PlannerError: failing to plan is a defect,
+    declining a question outside the tool surface is correct behaviour, and
+    collapsing the two would make the more impressive outcome look like a bug.
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 @dataclass
 class PlannerResult:
     plan: Plan | None
@@ -79,10 +92,15 @@ class PlannerResult:
     pricing_known: bool = True
     latency_ms: float = 0.0
     model: str = ""
+    refusal: str = ""
 
     @property
     def ok(self) -> bool:
         return self.plan is not None
+
+    @property
+    def refused(self) -> bool:
+        return bool(self.refusal)
 
 
 # --------------------------------------------------------------------------
@@ -306,6 +324,18 @@ checked before anything runs.
   arr, margins). No parameter accepts a figure, so such a reference is rejected.
 - Enum parameters take literal values only, never references.
 
+IF THE TOOLS CANNOT ANSWER THE QUESTION
+Some questions cannot be answered with the tools above -- cash flow, balance
+sheet, pipeline, headcount by individual, anything outside this warehouse.
+When that is the case, return ONLY:
+
+  {{"refusal": "one sentence on what the question needs and why the available
+  tools cannot supply it"}}
+
+Do NOT substitute a related question you CAN answer and present it as though it
+were the one asked. Refusing is correct and expected; answering a different
+question is not.
+
 OUTPUT FORMAT
 Return ONLY a JSON object, no prose and no markdown fences:
 {{
@@ -326,6 +356,18 @@ Return ONLY a JSON object, no prose and no markdown fences:
   without invalidating it. Optional steps that return no rows are skipped;
   required steps that return no rows cause a refusal.
 - Maximum {max_steps} steps."""
+
+PRIOR_RUN_PROMPT = """WHAT YOU ALREADY RETRIEVED, EARLIER IN THIS SESSION
+
+{prior}
+
+The user is now asking a FOLLOW-UP. Plan only what the new question needs.
+Do not re-run a step whose result is listed above unless the new question
+genuinely requires it again -- repeating retrieval the user has already paid
+for is waste, not thoroughness. You cannot reference an earlier run's rows
+with $STEP_n: those belong to a finished run. If you need a value from it,
+retrieve it again in this plan.
+"""
 
 USER_PROMPT = """GOAL: {goal_text}
 
@@ -390,9 +432,19 @@ def parse_plan(text: str, goal_text: str) -> Plan:
     if not isinstance(obj, dict):
         raise PlanError(["planner output was not a JSON object"])
 
-    unknown = set(obj) - {"reasoning", "promises", "steps"}
+    unknown = set(obj) - {"reasoning", "promises", "steps", "refusal"}
     if unknown:
         raise PlanError([f"unexpected top-level key(s): {sorted(unknown)}"])
+
+    # A refusal is a first-class outcome, not a failure to plan. The tool
+    # surface is deliberately narrow, so questions outside it are expected --
+    # and answering a DIFFERENT question that the tools happen to support,
+    # presented as though it were the one asked, is the worse behaviour.
+    refusal = obj.get("refusal")
+    if refusal and not obj.get("steps"):
+        if not isinstance(refusal, str):
+            raise PlanError(["'refusal' must be a string"])
+        raise PlannerRefusal(refusal.strip())
 
     raw_steps = obj.get("steps")
     if not isinstance(raw_steps, list) or not raw_steps:
@@ -477,12 +529,27 @@ class Planner:
         self.max_attempts = max_attempts
         self.model = model or getattr(client, "model", "scripted")
 
-    def propose(self, goal_text: str, goal: dict) -> PlannerResult:
+    def propose(self, goal_text: str, goal: dict,
+                prior_runs: list | None = None) -> PlannerResult:
+        """Propose a plan, optionally with earlier runs from this session.
+
+        `prior_runs` turns a one-shot planner into a conversation: the model
+        sees what it already fetched and plans only the delta. That is the
+        difference between a form that takes a question and an agent you can
+        follow up with -- and it is bounded the same way as everything else,
+        because a follow-up still produces a plan that static validation gates
+        before any query runs.
+
+        Prior rows are summarised, never replayed as $STEP references: those
+        belong to a finished run whose ledger this run does not own.
+        """
         system = build_system_prompt(set(goal))
-        user = USER_PROMPT.format(
+        base = USER_PROMPT.format(
             goal_text=goal_text,
             goal_json=json.dumps(goal, indent=2, sort_keys=True),
         )
+        user = (PRIOR_RUN_PROMPT.format(prior=summarize_prior(prior_runs))
+                + "\n" + base) if prior_runs else base
 
         result = PlannerResult(plan=None, model=self.model)
         t0 = time.perf_counter()
@@ -505,16 +572,20 @@ class Planner:
             try:
                 plan = parse_plan(raw, goal_text)
                 validate_plan(plan, set(goal))
+            except PlannerRefusal as r:
+                result.refusal = r.reason
+                result.attempts.append({"attempt": attempt, "accepted": False,
+                                        "problems": [], "refusal": r.reason,
+                                        "raw": raw[:2000]})
+                result.latency_ms = (time.perf_counter() - t0) * 1000
+                return result
             except PlanError as e:
                 result.attempts.append({
                     "attempt": attempt, "accepted": False,
                     "problems": list(e.problems), "raw": raw[:2000],
                 })
-                user = (USER_PROMPT.format(
-                    goal_text=goal_text,
-                    goal_json=json.dumps(goal, indent=2, sort_keys=True))
-                    + "\n\n" + RETRY_PROMPT.format(
-                        problems="\n".join(f"- {p}" for p in e.problems)))
+                user = (base + "\n\n" + RETRY_PROMPT.format(
+                    problems="\n".join(f"- {p}" for p in e.problems)))
                 continue
 
             result.attempts.append({"attempt": attempt, "accepted": True,
@@ -529,6 +600,36 @@ class Planner:
             f"last problems: {result.attempts[-1]['problems']}",
             result.attempts,
         )
+
+
+def summarize_prior(runs: list, max_rows: int = 3) -> str:
+    """Compact digest of earlier runs in this session.
+
+    Deliberately a SUMMARY and not the rows: handing back full results would
+    grow the prompt without bound across a conversation, and would invite the
+    model to quote a figure from context rather than retrieve it -- which is
+    the transcription failure the whole architecture exists to prevent.
+    """
+    if not runs:
+        return "(nothing yet)"
+    out = []
+    for i, r in enumerate(runs, start=1):
+        goal_text = r.get("goal_text", "")
+        out.append(f'Run {i} -- asked: "{goal_text}"')
+        for name, sec in sorted(r.get("sections", {}).items(),
+                                key=lambda kv: kv[1]["step"]):
+            params = {k: v for k, v in (sec.get("params") or {}).items()
+                      if k != "comparison"}
+            rows = sec.get("rows") or []
+            preview = ""
+            if rows:
+                keys = [k for k in ("name", "member", "statement_line",
+                                    "account_name") if k in rows[0]]
+                if keys:
+                    preview = ("  e.g. " + ", ".join(
+                        str(x[keys[0]]) for x in rows[:max_rows]))
+            out.append(f"   {sec['tool']}({params}) -> {len(rows)} row(s){preview}")
+    return "\n".join(out)
 
 
 # --------------------------------------------------------------------------

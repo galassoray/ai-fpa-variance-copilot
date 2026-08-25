@@ -89,8 +89,25 @@ class Orchestrator:
         self.ctx = reg.ValidationContext(con)
 
     # ------------------------------------------------------------------
-    def run(self, plan: Plan, goal: dict) -> RunResult:
+    def run(self, plan: Plan, goal: dict, gate0=None) -> RunResult:
+        """Execute a validated plan.
+
+        `gate0` is an optional callable receiving the validated plan and
+        returning True to proceed. It runs AFTER static validation and BEFORE
+        any query, so a reviewer never sees a plan that could not have run, and
+        a rejected plan costs nothing. Off by default: on a read-only surface it
+        adds inspectability rather than safety, and claiming otherwise would be
+        overclaiming. The seam exists because a write-capable registry would
+        require it.
+        """
         validate_plan(plan, set(goal))          # cheapest place to fail: zero queries
+
+        if gate0 is not None and not gate0(plan):
+            from agent.gates import PlanRejected
+            raise PlanRejected(
+                "plan review declined the plan; no query was run"
+            )
+
         ledger = RunLedger(goal=goal, budget=self.budget)
 
         outcome = COMPLETED

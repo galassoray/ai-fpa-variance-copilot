@@ -380,7 +380,7 @@ def test_cost_is_instrumented_from_the_start(con, goal):
     assert set(c) == {"steps", "wall_clock_s", "planning_latency_ms",
                       "tool_latency_ms", "tokens_in", "tokens_out", "cost_usd",
                       "pricing_known", "planner_model", "replans"}
-    assert c["steps"] == 11 and c["tool_latency_ms"] > 0
+    assert c["steps"] == 14 and c["tool_latency_ms"] > 0
     assert c["tokens_in"] == 0 and c["cost_usd"] == 0.0
     assert c["planning_latency_ms"] == 0.0 and c["planner_model"] == ""
 
@@ -424,7 +424,7 @@ def test_unpriced_planning_never_reports_zero_cost(con, goal):
 def test_every_step_produces_exactly_one_ledger_entry(con, goal):
     res = Orchestrator(con).run(variance_package_plan(goal), goal)
     idxs = [e.step_idx for e in res.ledger.entries]
-    assert idxs == sorted(idxs) and len(idxs) == len(set(idxs)) == 11
+    assert idxs == sorted(idxs) and len(idxs) == len(set(idxs)) == 14
 
 
 # --------------------------------------------------------------------------
@@ -463,10 +463,10 @@ def test_package_matches_golden(con, goal):
     res = Orchestrator(con).run(variance_package_plan(goal), goal)
     digest = package_digest(res)
     if os.environ.get("AGENT_GOLDEN") == "regen" or not os.path.exists(GOLDEN):
-        with open(GOLDEN, "w") as fh:
+        with open(GOLDEN, "w", encoding="utf-8") as fh:
             json.dump(digest, fh, indent=2, sort_keys=True)
         pytest.skip("golden regenerated")
-    with open(GOLDEN) as fh:
+    with open(GOLDEN, encoding="utf-8") as fh:
         expected = json.load(fh)
     assert digest == expected, (
         "package diverged from golden. If intended, re-run with AGENT_GOLDEN=regen"
@@ -516,7 +516,7 @@ def test_only_the_planner_and_narrator_may_reach_a_model():
     for fname in sorted(os.listdir(agent_dir)):
         if not fname.endswith(".py") or fname in LLM_ALLOWED_MODULES:
             continue
-        text = open(os.path.join(agent_dir, fname)).read()
+        text = open(os.path.join(agent_dir, fname), encoding="utf-8").read()
         for line in text.splitlines():
             stripped = line.strip()
             if not (stripped.startswith("import ") or stripped.startswith("from ")):
@@ -539,7 +539,7 @@ def test_the_fact_pack_builder_cannot_reach_a_model():
         path = os.path.join(agent_dir, fname)
         if not os.path.exists(path):
             continue
-        for line in open(path).read().splitlines():
+        for line in open(path, encoding="utf-8").read().splitlines():
             stripped = line.strip()
             if not (stripped.startswith("import ") or stripped.startswith("from ")):
                 continue
@@ -575,7 +575,7 @@ def test_cli_json_output_is_replayable(con, capsys):
     saved = json.loads(capsys.readouterr().out)
     ok, problems = lg.verify_replay(saved)
     assert ok and not problems
-    assert len(saved["steps"]) == 11 and saved["outcome"] == lg.COMPLETED
+    assert len(saved["steps"]) == 14 and saved["outcome"] == lg.COMPLETED
 
 
 # --------------------------------------------------------------------------
@@ -606,8 +606,12 @@ def test_changed_source_data_propagates_all_the_way_to_the_package(tmp_path, mon
     (work / "data" / "processed").mkdir(parents=True, exist_ok=True)
 
     def run(*args):
+        # encoding pinned: text=True otherwise decodes the child's stdout with
+        # the LOCALE encoding, so this test fails on any non-UTF-8 console for
+        # reasons that have nothing to do with what it is testing.
         return subprocess.run([sys.executable, *args], cwd=str(work),
-                              capture_output=True, text=True)
+                              capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
 
     assert run("src/agent/materialize.py").returncode == 0
     before = run("src/agent/run_package.py", PERIOD)
@@ -615,11 +619,11 @@ def test_changed_source_data_propagates_all_the_way_to_the_package(tmp_path, mon
 
     # Blow up one department's salaries so the ranking must change.
     fp = work / "data" / "synthetic" / "fact_actuals.csv"
-    rows = list(csv.DictReader(open(fp, newline="")))
+    rows = list(csv.DictReader(open(fp, newline="", encoding="utf-8")))
     for r in rows:
         if r["month"].startswith("2025-09") and r["account_id"] == "CS_SAL":
             r["amount"] = str(float(r["amount"]) + 400_000)
-    with open(fp, "w", newline="") as fh:
+    with open(fp, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=["month", "department_id", "account_id", "amount"])
         w.writeheader()
         w.writerows(rows)

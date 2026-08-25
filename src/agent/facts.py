@@ -75,6 +75,34 @@ _FIELD_KINDS = {
     "volume_impact": ("dollar", "volume effect"),
     "price_impact": ("dollar", "price effect"),
     "value": ("dollar", "trend value"),
+    # comparative and trend tools. Their absence here was a real defect: the
+    # tools ran, returned rows, and contributed NOTHING to the whitelist, so a
+    # month-over-month question produced "insufficient data" from a run that
+    # had retrieved everything it needed. A field the model can see but not
+    # state is worse than a field it cannot see at all.
+    # Found by the per-tool whitelist test, in the ORIGINAL tools rather than
+    # the new ones: get_account_trend returns "budget" (the rest of the codebase
+    # calls it "base"), so a trend could be narrated with its actuals but not
+    # its plan. The residuals are the unexplained remainder of a decomposition
+    # and are worth stating -- "the split ties exactly" is a real claim.
+    "budget": ("dollar", "budget"),
+    "bridge_diff": ("dollar", "ARR bridge residual"),
+    "decomp_residual": ("dollar", "unexplained residual"),
+    "actual_a": ("dollar", "actual"), "actual_b": ("dollar", "prior actual"),
+    "change": ("dollar", "change"),
+    "oi_impact_of_change": ("dollar", "OI impact of change"),
+    "change_vs_prior_month": ("dollar", "change vs prior month"),
+    "actual_ytd": ("dollar", "actual YTD"),
+    "budget_ytd": ("dollar", "budget YTD"),
+    "variance_ytd": ("dollar", "variance YTD"),
+    "oi_impact_ytd": ("dollar", "OI impact YTD"),
+    "cumulative_oi_impact": ("dollar", "cumulative OI impact"),
+    "worst_month_oi_impact": ("dollar", "worst month OI impact"),
+    "dept_opex": ("dollar", "department opex"),
+    "change_pct": ("percent", "% change"),
+    "dept_opex_pct_revenue": ("percent", "opex % of revenue"),
+    "months_unfavorable": ("count", "months unfavorable"),
+    "months_observed": ("count", "months observed"),
     # ratios
     "variance_pct": ("percent", "% variance"),
     "gross_margin": ("percent", "gross margin"),
@@ -303,6 +331,47 @@ def fact_pack_from_ledger(result, goal: dict, scope: str = "company") -> FactPac
                              "nrr_ttm", "grr_ttm")}
             facts["arr"].update(rows_numeric[0])
 
+        elif tool == "compare_periods":
+            facts["period_comparison"] = {
+                "grain": params.get("dimension"),
+                "period": params.get("period_a"),
+                "compared_with": params.get("period_b"),
+                "movers": [{**n, "name": r.get("name"),
+                            "member": r.get("member")}
+                           for r, n in zip(rows, rows_numeric)],
+            }
+
+        elif tool == "get_ytd_summary":
+            facts["year_to_date"] = [
+                {**n, "line": r.get("statement_line"),
+                 "favorable": r.get("favorable")}
+                for r, n in zip(rows, rows_numeric)]
+
+        elif tool == "rank_persistent_drivers":
+            facts["persistent_drivers"] = [
+                {**n, "name": r.get("name"), "member": r.get("member")}
+                for r, n in zip(rows, rows_numeric)]
+
+        elif tool == "rank_mom_movers":
+            facts["month_over_month_movers"] = [
+                {**n, "name": r.get("name"), "member": r.get("member")}
+                for r, n in zip(rows, rows_numeric)]
+
+        elif tool == "get_account_trend":
+            facts["account_trend"] = {
+                "account": rows[0].get("account_name"),
+                "months": [{**n, "month": r.get("month")}
+                           for r, n in zip(rows, rows_numeric)],
+            }
+
+        elif tool == "get_opex_ratio_trend":
+            facts["opex_ratio_trend"] = {
+                "department": rows[0].get("department_name")
+                or params.get("department_id"),
+                "months": [{**n, "month": r.get("month")}
+                           for r, n in zip(rows, rows_numeric)],
+            }
+
         elif tool == "get_headcount_movement":
             facts["headcount"] = [
                 {**n,
@@ -323,7 +392,12 @@ def fact_pack_from_ledger(result, goal: dict, scope: str = "company") -> FactPac
     # `top_drivers` is the canonical slot the injection narrative reads. Prefer
     # the rollup grain; fall back to accounts when the plan only decomposed.
     if drivers:
-        facts["top_drivers"] = drivers[:10]
+        # NOT truncated. Every retrieved row is whitelisted, so capping what
+        # the model SEES leaves values it is permitted to state but cannot
+        # read -- the same silent failure as an unregistered field. Surfaced by
+        # the whitelist-visibility invariant when the plan grew from two
+        # decompositions to five.
+        facts["top_drivers"] = drivers
         facts["how_to_read_drivers"] = (
             "oi_impact is the signed effect on operating income: negative is "
             "unfavorable regardless of whether the line is revenue or expense. "
@@ -333,9 +407,9 @@ def fact_pack_from_ledger(result, goal: dict, scope: str = "company") -> FactPac
             "opex' unless its detail confirms that."
         )
         if account_drivers:
-            facts["driver_detail_by_account"] = account_drivers[:10]
+            facts["driver_detail_by_account"] = account_drivers
     elif account_drivers:
-        facts["top_drivers"] = account_drivers[:10]
+        facts["top_drivers"] = account_drivers
     if extra:
         facts["additional_analysis"] = extra
 

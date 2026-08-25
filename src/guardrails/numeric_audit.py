@@ -50,7 +50,15 @@ _NUM = (r"-?\$?\s?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?"
 # consequence: a figure with inverted favourability verifying green against the
 # computed magnitude.
 _MONEY_RE = re.compile(
-    rf"(?P<open>\()?(?P<num>{_NUM})\s?"
+    # Leading boundary: a figure must START at one. Without it, a hex digest
+    # like "d9434ff7908b617d" yields "7908b" -> $7.908 TRILLION, because the
+    # "b" is followed by a digit and so passes the trailing-boundary check.
+    # That surfaced on a deck whose approval hash happened to contain such a
+    # run: a phantom figure that appears or not depending on a random hash,
+    # which is the worst kind of intermittent.
+    #
+    # It also stops "FY2025" and "Q3" being read as quantities.
+    rf"(?<![A-Za-z0-9])(?P<open>\()?(?P<num>{_NUM})\s?"
     # The suffix must be a COMPLETE token. Without the trailing boundary, the
     # "b" of "below", the "m" of "mainly", and the "k" of "kept" were consumed
     # as magnitude suffixes: "$109,338 below plan" was read as $109 trillion and

@@ -1,0 +1,2440 @@
+{
+  "format_version": 2,
+  "saved_at_utc": "2026-08-24T02:31:49.283964+00:00",
+  "label": "deterministic-2024-06",
+  "ledger": {
+    "run_id": "f59a39416440",
+    "goal": {
+      "period": "2024-06-01",
+      "comparison": "actual_vs_budget",
+      "fiscal_year": 2024,
+      "month_number": 6,
+      "quarter": "2024-Q2",
+      "fy_start": "2024-01-01",
+      "prior_period": "2024-05-01"
+    },
+    "budget": {
+      "max_steps": 25,
+      "max_wall_clock_s": 120.0,
+      "max_tokens": 100000,
+      "max_cost_usd": 1.0,
+      "max_replans_per_step": 2,
+      "max_replans_per_run": 4
+    },
+    "started_at": "2026-08-24T02:31:49.217574+00:00",
+    "outcome": "COMPLETED",
+    "refusal_reason": "",
+    "notes": [],
+    "planning": {},
+    "cost": {
+      "steps": 14,
+      "wall_clock_s": 0.062,
+      "planning_latency_ms": 0.0,
+      "tool_latency_ms": 60.5,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "cost_usd": 0.0,
+      "pricing_known": true,
+      "planner_model": "",
+      "replans": 0
+    },
+    "steps": [
+      {
+        "step_idx": 1,
+        "tool": "list_periods",
+        "params_declared": {},
+        "params_resolved": {},
+        "outcome": "OK",
+        "row_count": 24,
+        "result_hash": "b440b4edda3ed655",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 6.994399940595031,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.224633+00:00"
+      },
+      {
+        "step_idx": 2,
+        "tool": "get_operating_metrics",
+        "params_declared": {
+          "period": "$GOAL.period"
+        },
+        "params_resolved": {
+          "period": "2024-06-01"
+        },
+        "outcome": "OK",
+        "row_count": 1,
+        "result_hash": "c0fcbe2341c10522",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 3.22120008058846,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.228024+00:00"
+      },
+      {
+        "step_idx": 3,
+        "tool": "get_pl_summary",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "comparison": "$GOAL.comparison"
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "comparison": "actual_vs_budget"
+        },
+        "outcome": "OK",
+        "row_count": 3,
+        "result_hash": "76443fff9ee98699",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 5.862700054422021,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.234006+00:00"
+      },
+      {
+        "step_idx": 4,
+        "tool": "rank_variance_drivers",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "dimension": "department",
+          "comparison": "$GOAL.comparison",
+          "top_n": 5
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "dimension": "department",
+          "comparison": "actual_vs_budget",
+          "top_n": 5
+        },
+        "outcome": "OK",
+        "row_count": 5,
+        "result_hash": "4d8c86a539588799",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 7.192699937149882,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.241337+00:00"
+      },
+      {
+        "step_idx": 5,
+        "tool": "decompose_variance",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "department_id": "$STEP_4.rows[0].member",
+          "comparison": "$GOAL.comparison",
+          "top_n": 5
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "department_id": "CORP",
+          "comparison": "actual_vs_budget",
+          "top_n": 5
+        },
+        "outcome": "OK",
+        "row_count": 5,
+        "result_hash": "4491bd019fe7a01f",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 6.29550009034574,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.247784+00:00"
+      },
+      {
+        "step_idx": 6,
+        "tool": "decompose_variance",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "department_id": "$STEP_4.rows[1].member",
+          "comparison": "$GOAL.comparison",
+          "top_n": 5
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "department_id": "SM",
+          "comparison": "actual_vs_budget",
+          "top_n": 5
+        },
+        "outcome": "OK",
+        "row_count": 5,
+        "result_hash": "e1d04e764ff2aca6",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 5.548499990254641,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.253516+00:00"
+      },
+      {
+        "step_idx": 7,
+        "tool": "decompose_variance",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "department_id": "$STEP_4.rows[2].member",
+          "comparison": "$GOAL.comparison",
+          "top_n": 5
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "department_id": "RND",
+          "comparison": "actual_vs_budget",
+          "top_n": 5
+        },
+        "outcome": "OK",
+        "row_count": 5,
+        "result_hash": "26e212f27c88d46c",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 5.252100061625242,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.258919+00:00"
+      },
+      {
+        "step_idx": 8,
+        "tool": "decompose_variance",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "department_id": "$STEP_4.rows[3].member",
+          "comparison": "$GOAL.comparison",
+          "top_n": 5
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "department_id": "GA",
+          "comparison": "actual_vs_budget",
+          "top_n": 5
+        },
+        "outcome": "OK",
+        "row_count": 5,
+        "result_hash": "c52336dd199618c1",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 5.730099976062775,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.264790+00:00"
+      },
+      {
+        "step_idx": 9,
+        "tool": "decompose_variance",
+        "params_declared": {
+          "period": "$GOAL.period",
+          "department_id": "$STEP_4.rows[4].member",
+          "comparison": "$GOAL.comparison",
+          "top_n": 5
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "department_id": "CS",
+          "comparison": "actual_vs_budget",
+          "top_n": 5
+        },
+        "outcome": "OK",
+        "row_count": 4,
+        "result_hash": "572f9ce99a10233b",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 5.604499951004982,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.270558+00:00"
+      },
+      {
+        "step_idx": 10,
+        "tool": "get_comp_decomposition",
+        "params_declared": {
+          "period": "$GOAL.period"
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "department_id": null
+        },
+        "outcome": "OK",
+        "row_count": 4,
+        "result_hash": "3c47bcc6817ffa3a",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 2.6923001278191805,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.273371+00:00"
+      },
+      {
+        "step_idx": 11,
+        "tool": "get_revenue_decomposition",
+        "params_declared": {
+          "period": "$GOAL.period"
+        },
+        "params_resolved": {
+          "period": "2024-06-01"
+        },
+        "outcome": "OK",
+        "row_count": 1,
+        "result_hash": "4acb780b225c4bb4",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 0.9582999628037214,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.274436+00:00"
+      },
+      {
+        "step_idx": 12,
+        "tool": "get_arr_bridge",
+        "params_declared": {
+          "period": "$GOAL.period"
+        },
+        "params_resolved": {
+          "period": "2024-06-01"
+        },
+        "outcome": "OK",
+        "row_count": 1,
+        "result_hash": "8adc53cbed7df0c3",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 1.199300168082118,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.275711+00:00"
+      },
+      {
+        "step_idx": 13,
+        "tool": "get_headcount_movement",
+        "params_declared": {
+          "period": "$GOAL.period"
+        },
+        "params_resolved": {
+          "period": "2024-06-01",
+          "department_id": null
+        },
+        "outcome": "OK",
+        "row_count": 4,
+        "result_hash": "f2db471be6fe690c",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 2.119499957188964,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.277929+00:00"
+      },
+      {
+        "step_idx": 14,
+        "tool": "get_trend",
+        "params_declared": {
+          "metric": "opex",
+          "start_period": "$GOAL.fy_start",
+          "end_period": "$GOAL.period"
+        },
+        "params_resolved": {
+          "metric": "opex",
+          "start_period": "2024-01-01",
+          "end_period": "2024-06-01"
+        },
+        "outcome": "OK",
+        "row_count": 6,
+        "result_hash": "8c848540709a1ee8",
+        "error": "",
+        "valid_alternatives": [],
+        "latency_ms": 1.8282998353242874,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd": 0.0,
+        "replanned": false,
+        "timestamp": "2026-08-24T02:31:49.279853+00:00"
+      }
+    ],
+    "results": {
+      "1": [
+        {
+          "month": "2024-01-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-02-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-03-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-04-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-05-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-06-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-07-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-08-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-09-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-10-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-11-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-12-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2025-01-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-02-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-03-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-04-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-05-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-06-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-07-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-08-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-09-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-10-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-11-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-12-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        }
+      ],
+      "2": [
+        {
+          "month": "2024-06-01",
+          "revenue": 2099477.76,
+          "cogs": 349360.18,
+          "opex": 2300122.15,
+          "gross_profit": 1750117.58,
+          "gross_margin": 0.83,
+          "operating_income": -550004.57,
+          "operating_margin": -0.26,
+          "opex_pct_revenue": 1.1,
+          "total_headcount": 121,
+          "ending_arr": 23545545.02,
+          "arr_per_head": 194591.28,
+          "revenue_per_head": 208212.67
+        }
+      ],
+      "3": [
+        {
+          "statement_line": "Revenue",
+          "actual": 2099477.76,
+          "base": 2094084.12,
+          "variance": 5393.64,
+          "oi_impact": 5393.64,
+          "variance_pct": 0.00258,
+          "favorable": true
+        },
+        {
+          "statement_line": "Cost of Revenue",
+          "actual": 349360.18,
+          "base": 350827.58,
+          "variance": -1467.4,
+          "oi_impact": 1467.4,
+          "variance_pct": -0.00418,
+          "favorable": true
+        },
+        {
+          "statement_line": "Operating Expenses",
+          "actual": 2300122.15,
+          "base": 2298758.62,
+          "variance": 1363.53,
+          "oi_impact": -1363.53,
+          "variance_pct": 0.00059,
+          "favorable": false
+        }
+      ],
+      "4": [
+        {
+          "rank": 1,
+          "member": "CORP",
+          "name": "Corporate / Company",
+          "actual": 2448837.94,
+          "base": 2444911.7,
+          "variance": 3926.24,
+          "oi_impact": 6861.04,
+          "share_of_total_oi_impact": 0.40306,
+          "favorable": true
+        },
+        {
+          "rank": 2,
+          "member": "SM",
+          "name": "Sales & Marketing",
+          "actual": 908193.07,
+          "base": 912591.95,
+          "variance": -4398.88,
+          "oi_impact": 4398.88,
+          "share_of_total_oi_impact": 0.25842,
+          "favorable": true
+        },
+        {
+          "rank": 3,
+          "member": "RND",
+          "name": "Research & Development",
+          "actual": 785923.87,
+          "base": 783350.0,
+          "variance": 2573.87,
+          "oi_impact": -2573.87,
+          "share_of_total_oi_impact": 0.15121,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "member": "GA",
+          "name": "General & Administrative",
+          "actual": 375106.93,
+          "base": 372950.0,
+          "variance": 2156.93,
+          "oi_impact": -2156.93,
+          "share_of_total_oi_impact": 0.12671,
+          "favorable": false
+        },
+        {
+          "rank": 5,
+          "member": "CS",
+          "name": "Customer Success",
+          "actual": 230898.28,
+          "base": 229866.67,
+          "variance": 1031.61,
+          "oi_impact": -1031.61,
+          "share_of_total_oi_impact": 0.0606,
+          "favorable": false
+        }
+      ],
+      "5": [
+        {
+          "rank": 1,
+          "department_name": "Corporate / Company",
+          "account_id": "REV_SUB",
+          "account_name": "Subscription Revenue",
+          "account_category": "Subscription",
+          "statement_line": "Revenue",
+          "actual": 1962128.75,
+          "base": 1957087.96,
+          "variance": 5040.79,
+          "oi_impact": 5040.79,
+          "share_of_department_oi_impact": 0.71448,
+          "favorable": true
+        },
+        {
+          "rank": 2,
+          "department_name": "Corporate / Company",
+          "account_id": "COGS_SUPPORT",
+          "account_name": "Customer Support COGS",
+          "account_category": "Support",
+          "statement_line": "Cost of Revenue",
+          "actual": 86976.96,
+          "base": 88068.96,
+          "variance": -1092.0,
+          "oi_impact": 1092.0,
+          "share_of_department_oi_impact": 0.15478,
+          "favorable": true
+        },
+        {
+          "rank": 3,
+          "department_name": "Corporate / Company",
+          "account_id": "COGS_HOST",
+          "account_name": "Hosting / Infrastructure",
+          "account_category": "Infrastructure",
+          "statement_line": "Cost of Revenue",
+          "actual": 224592.62,
+          "base": 225065.11,
+          "variance": -472.49,
+          "oi_impact": 472.49,
+          "share_of_department_oi_impact": 0.06697,
+          "favorable": true
+        },
+        {
+          "rank": 4,
+          "department_name": "Corporate / Company",
+          "account_id": "REV_SVC",
+          "account_name": "Services Revenue",
+          "account_category": "Services",
+          "statement_line": "Revenue",
+          "actual": 137349.01,
+          "base": 136996.16,
+          "variance": 352.85,
+          "oi_impact": 352.85,
+          "share_of_department_oi_impact": 0.05001,
+          "favorable": true
+        },
+        {
+          "rank": 5,
+          "department_name": "Corporate / Company",
+          "account_id": "COGS_PAY",
+          "account_name": "Payment Processing",
+          "account_category": "Payments",
+          "statement_line": "Cost of Revenue",
+          "actual": 37790.6,
+          "base": 37693.51,
+          "variance": 97.09,
+          "oi_impact": -97.09,
+          "share_of_department_oi_impact": 0.01376,
+          "favorable": false
+        }
+      ],
+      "6": [
+        {
+          "rank": 1,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_MKT",
+          "account_name": "Paid Marketing",
+          "account_category": "Marketing",
+          "statement_line": "Operating Expenses",
+          "actual": 176174.46,
+          "base": 186000.0,
+          "variance": -9825.54,
+          "oi_impact": 9825.54,
+          "share_of_department_oi_impact": 0.62035,
+          "favorable": true
+        },
+        {
+          "rank": 2,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_SAL",
+          "account_name": "Salaries",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 537084.09,
+          "base": 531666.67,
+          "variance": 5417.42,
+          "oi_impact": -5417.42,
+          "share_of_department_oi_impact": 0.34204,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_COMM",
+          "account_name": "Commissions",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 117727.73,
+          "base": 117425.28,
+          "variance": 302.45,
+          "oi_impact": -302.45,
+          "share_of_department_oi_impact": 0.0191,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_EVENTS",
+          "account_name": "Events",
+          "account_category": "Marketing",
+          "statement_line": "Operating Expenses",
+          "actual": 36206.79,
+          "base": 36500.0,
+          "variance": -293.21,
+          "oi_impact": 293.21,
+          "share_of_department_oi_impact": 0.01851,
+          "favorable": true
+        },
+        {
+          "rank": 5,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_SW",
+          "account_name": "Sales Software",
+          "account_category": "Software",
+          "statement_line": "Operating Expenses",
+          "actual": 22400.0,
+          "base": 22400.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        }
+      ],
+      "7": [
+        {
+          "rank": 1,
+          "department_name": "Research & Development",
+          "account_id": "RND_SAL",
+          "account_name": "Salaries",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 584519.85,
+          "base": 574000.0,
+          "variance": 10519.85,
+          "oi_impact": -10519.85,
+          "share_of_department_oi_impact": 0.53603,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "department_name": "Research & Development",
+          "account_id": "RND_CONTRACT",
+          "account_name": "Contractors",
+          "account_category": "Contractors",
+          "statement_line": "Operating Expenses",
+          "actual": 84474.21,
+          "base": 93000.0,
+          "variance": -8525.79,
+          "oi_impact": 8525.79,
+          "share_of_department_oi_impact": 0.43443,
+          "favorable": true
+        },
+        {
+          "rank": 3,
+          "department_name": "Research & Development",
+          "account_id": "RND_CLOUD",
+          "account_name": "Cloud Development Tools",
+          "account_category": "Software",
+          "statement_line": "Operating Expenses",
+          "actual": 62579.81,
+          "base": 62000.0,
+          "variance": 579.81,
+          "oi_impact": -579.81,
+          "share_of_department_oi_impact": 0.02954,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "department_name": "Research & Development",
+          "account_id": "RND_RECRUIT",
+          "account_name": "Recruiting",
+          "account_category": "Recruiting",
+          "statement_line": "Operating Expenses",
+          "actual": 25750.0,
+          "base": 25750.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 5,
+          "department_name": "Research & Development",
+          "account_id": "RND_SW",
+          "account_name": "Software",
+          "account_category": "Software",
+          "statement_line": "Operating Expenses",
+          "actual": 28600.0,
+          "base": 28600.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        }
+      ],
+      "8": [
+        {
+          "rank": 1,
+          "department_name": "General & Administrative",
+          "account_id": "GA_SAL",
+          "account_name": "Salaries",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 201266.97,
+          "base": 200000.0,
+          "variance": 1266.97,
+          "oi_impact": -1266.97,
+          "share_of_department_oi_impact": 0.5874,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "department_name": "General & Administrative",
+          "account_id": "GA_LEGAL",
+          "account_name": "Legal & Professional Fees",
+          "account_category": "Legal & Professional",
+          "statement_line": "Operating Expenses",
+          "actual": 46889.96,
+          "base": 46000.0,
+          "variance": 889.96,
+          "oi_impact": -889.96,
+          "share_of_department_oi_impact": 0.4126,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "department_name": "General & Administrative",
+          "account_id": "GA_ADMIN",
+          "account_name": "Office / Admin",
+          "account_category": "Office",
+          "statement_line": "Operating Expenses",
+          "actual": 18400.0,
+          "base": 18400.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "department_name": "General & Administrative",
+          "account_id": "GA_FAC",
+          "account_name": "Facilities",
+          "account_category": "Facilities",
+          "statement_line": "Operating Expenses",
+          "actual": 55750.0,
+          "base": 55750.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 5,
+          "department_name": "General & Administrative",
+          "account_id": "GA_INS",
+          "account_name": "Insurance",
+          "account_category": "Insurance",
+          "statement_line": "Operating Expenses",
+          "actual": 22300.0,
+          "base": 22300.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        }
+      ],
+      "9": [
+        {
+          "rank": 1,
+          "department_name": "Customer Success",
+          "account_id": "CS_SAL",
+          "account_name": "Salaries",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 187698.28,
+          "base": 186666.67,
+          "variance": 1031.61,
+          "oi_impact": -1031.61,
+          "share_of_department_oi_impact": 1.0,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "department_name": "Customer Success",
+          "account_id": "CS_SW",
+          "account_name": "Customer Success Software",
+          "account_category": "Software",
+          "statement_line": "Operating Expenses",
+          "actual": 20550.0,
+          "base": 20550.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "department_name": "Customer Success",
+          "account_id": "CS_TE",
+          "account_name": "Travel & Entertainment",
+          "account_category": "Travel",
+          "statement_line": "Operating Expenses",
+          "actual": 10300.0,
+          "base": 10300.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "department_name": "Customer Success",
+          "account_id": "CS_TRAIN",
+          "account_name": "Training / Enablement",
+          "account_category": "Training",
+          "statement_line": "Operating Expenses",
+          "actual": 12350.0,
+          "base": 12350.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        }
+      ],
+      "10": [
+        {
+          "month": "2024-06-01",
+          "department_id": "RND",
+          "department_name": "Research & Development",
+          "salary_budget": 574000.0,
+          "salary_actual": 584519.85,
+          "salary_variance": 10519.85,
+          "hc_impact": 0.0,
+          "rate_impact": 10519.85,
+          "decomp_residual": 0.0,
+          "favorable": false
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "SM",
+          "department_name": "Sales & Marketing",
+          "salary_budget": 531666.67,
+          "salary_actual": 537084.09,
+          "salary_variance": 5417.42,
+          "hc_impact": 0.0,
+          "rate_impact": 5417.43,
+          "decomp_residual": -0.01,
+          "favorable": false
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "GA",
+          "department_name": "General & Administrative",
+          "salary_budget": 200000.0,
+          "salary_actual": 201266.97,
+          "salary_variance": 1266.97,
+          "hc_impact": 0.0,
+          "rate_impact": 1266.97,
+          "decomp_residual": 0.0,
+          "favorable": false
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "CS",
+          "department_name": "Customer Success",
+          "salary_budget": 186666.67,
+          "salary_actual": 187698.28,
+          "salary_variance": 1031.61,
+          "hc_impact": 0.0,
+          "rate_impact": 1031.62,
+          "decomp_residual": -0.01,
+          "favorable": false
+        }
+      ],
+      "11": [
+        {
+          "month": "2024-06-01",
+          "rev_budget": 1957087.96,
+          "rev_actual": 1962128.75,
+          "rev_variance": 5040.79,
+          "volume_impact": 0.0,
+          "price_impact": 5040.79,
+          "decomp_residual": 0.0,
+          "favorable": true
+        }
+      ],
+      "12": [
+        {
+          "month": "2024-06-01",
+          "starting_arr": 23260818.29,
+          "new_arr": 436487.91,
+          "expansion_arr": 126762.74,
+          "contraction_arr": 89903.11,
+          "churned_arr": 188620.81,
+          "ending_arr": 23545545.02,
+          "bridge_diff": 0.0,
+          "customers_start": 520,
+          "new_customers": 14,
+          "churned_customers": 6,
+          "customers_end": 528,
+          "arpa": 44593.84,
+          "nrr": 0.99348,
+          "grr": 0.98803,
+          "nrr_ttm": null,
+          "grr_ttm": null
+        }
+      ],
+      "13": [
+        {
+          "month": "2024-06-01",
+          "department_id": "CS",
+          "department_name": "Customer Success",
+          "actual_headcount": 20,
+          "budget_headcount": 20,
+          "forecast_headcount": 20,
+          "hc_var_vs_budget": 0,
+          "hc_var_vs_forecast": 0
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "GA",
+          "department_name": "General & Administrative",
+          "actual_headcount": 16,
+          "budget_headcount": 16,
+          "forecast_headcount": 16,
+          "hc_var_vs_budget": 0,
+          "hc_var_vs_forecast": 0
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "RND",
+          "department_name": "Research & Development",
+          "actual_headcount": 41,
+          "budget_headcount": 41,
+          "forecast_headcount": 41,
+          "hc_var_vs_budget": 0,
+          "hc_var_vs_forecast": 0
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "SM",
+          "department_name": "Sales & Marketing",
+          "actual_headcount": 44,
+          "budget_headcount": 44,
+          "forecast_headcount": 44,
+          "hc_var_vs_budget": 0,
+          "hc_var_vs_forecast": 0
+        }
+      ],
+      "14": [
+        {
+          "month": "2024-01-01",
+          "value": 2142545.91,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-02-01",
+          "value": 2190754.45,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-03-01",
+          "value": 2236445.73,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-04-01",
+          "value": 2236613.71,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-05-01",
+          "value": 2280358.63,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-06-01",
+          "value": 2300122.15,
+          "metric": "opex"
+        }
+      ]
+    }
+  },
+  "sections": {
+    "period_coverage": {
+      "step": 1,
+      "tool": "list_periods",
+      "params": {},
+      "rows": [
+        {
+          "month": "2024-01-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-02-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-03-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-04-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-05-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-06-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-07-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-08-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-09-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-10-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-11-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2024-12-01",
+          "fiscal_year": 2024,
+          "quarter": "2024-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": false
+        },
+        {
+          "month": "2025-01-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-02-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-03-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q1",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-04-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-05-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-06-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q2",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-07-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-08-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-09-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q3",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-10-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-11-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        },
+        {
+          "month": "2025-12-01",
+          "fiscal_year": 2025,
+          "quarter": "2025-Q4",
+          "has_actuals": true,
+          "has_budget": true,
+          "has_forecast": true
+        }
+      ],
+      "result_hash": "b440b4edda3ed655",
+      "dimension": null
+    },
+    "operating_headline": {
+      "step": 2,
+      "tool": "get_operating_metrics",
+      "params": {
+        "period": "2024-06-01"
+      },
+      "rows": [
+        {
+          "month": "2024-06-01",
+          "revenue": 2099477.76,
+          "cogs": 349360.18,
+          "opex": 2300122.15,
+          "gross_profit": 1750117.58,
+          "gross_margin": 0.83,
+          "operating_income": -550004.57,
+          "operating_margin": -0.26,
+          "opex_pct_revenue": 1.1,
+          "total_headcount": 121,
+          "ending_arr": 23545545.02,
+          "arr_per_head": 194591.28,
+          "revenue_per_head": 208212.67
+        }
+      ],
+      "result_hash": "c0fcbe2341c10522",
+      "dimension": null
+    },
+    "pl_summary": {
+      "step": 3,
+      "tool": "get_pl_summary",
+      "params": {
+        "period": "2024-06-01",
+        "comparison": "actual_vs_budget"
+      },
+      "rows": [
+        {
+          "statement_line": "Revenue",
+          "actual": 2099477.76,
+          "base": 2094084.12,
+          "variance": 5393.64,
+          "oi_impact": 5393.64,
+          "variance_pct": 0.00258,
+          "favorable": true
+        },
+        {
+          "statement_line": "Cost of Revenue",
+          "actual": 349360.18,
+          "base": 350827.58,
+          "variance": -1467.4,
+          "oi_impact": 1467.4,
+          "variance_pct": -0.00418,
+          "favorable": true
+        },
+        {
+          "statement_line": "Operating Expenses",
+          "actual": 2300122.15,
+          "base": 2298758.62,
+          "variance": 1363.53,
+          "oi_impact": -1363.53,
+          "variance_pct": 0.00059,
+          "favorable": false
+        }
+      ],
+      "result_hash": "76443fff9ee98699",
+      "dimension": null
+    },
+    "department_drivers": {
+      "step": 4,
+      "tool": "rank_variance_drivers",
+      "params": {
+        "period": "2024-06-01",
+        "dimension": "department",
+        "comparison": "actual_vs_budget",
+        "top_n": 5
+      },
+      "rows": [
+        {
+          "rank": 1,
+          "member": "CORP",
+          "name": "Corporate / Company",
+          "actual": 2448837.94,
+          "base": 2444911.7,
+          "variance": 3926.24,
+          "oi_impact": 6861.04,
+          "share_of_total_oi_impact": 0.40306,
+          "favorable": true
+        },
+        {
+          "rank": 2,
+          "member": "SM",
+          "name": "Sales & Marketing",
+          "actual": 908193.07,
+          "base": 912591.95,
+          "variance": -4398.88,
+          "oi_impact": 4398.88,
+          "share_of_total_oi_impact": 0.25842,
+          "favorable": true
+        },
+        {
+          "rank": 3,
+          "member": "RND",
+          "name": "Research & Development",
+          "actual": 785923.87,
+          "base": 783350.0,
+          "variance": 2573.87,
+          "oi_impact": -2573.87,
+          "share_of_total_oi_impact": 0.15121,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "member": "GA",
+          "name": "General & Administrative",
+          "actual": 375106.93,
+          "base": 372950.0,
+          "variance": 2156.93,
+          "oi_impact": -2156.93,
+          "share_of_total_oi_impact": 0.12671,
+          "favorable": false
+        },
+        {
+          "rank": 5,
+          "member": "CS",
+          "name": "Customer Success",
+          "actual": 230898.28,
+          "base": 229866.67,
+          "variance": 1031.61,
+          "oi_impact": -1031.61,
+          "share_of_total_oi_impact": 0.0606,
+          "favorable": false
+        }
+      ],
+      "result_hash": "4d8c86a539588799",
+      "dimension": "department"
+    },
+    "top_driver_decomposition": {
+      "step": 5,
+      "tool": "decompose_variance",
+      "params": {
+        "period": "2024-06-01",
+        "department_id": "CORP",
+        "comparison": "actual_vs_budget",
+        "top_n": 5
+      },
+      "rows": [
+        {
+          "rank": 1,
+          "department_name": "Corporate / Company",
+          "account_id": "REV_SUB",
+          "account_name": "Subscription Revenue",
+          "account_category": "Subscription",
+          "statement_line": "Revenue",
+          "actual": 1962128.75,
+          "base": 1957087.96,
+          "variance": 5040.79,
+          "oi_impact": 5040.79,
+          "share_of_department_oi_impact": 0.71448,
+          "favorable": true
+        },
+        {
+          "rank": 2,
+          "department_name": "Corporate / Company",
+          "account_id": "COGS_SUPPORT",
+          "account_name": "Customer Support COGS",
+          "account_category": "Support",
+          "statement_line": "Cost of Revenue",
+          "actual": 86976.96,
+          "base": 88068.96,
+          "variance": -1092.0,
+          "oi_impact": 1092.0,
+          "share_of_department_oi_impact": 0.15478,
+          "favorable": true
+        },
+        {
+          "rank": 3,
+          "department_name": "Corporate / Company",
+          "account_id": "COGS_HOST",
+          "account_name": "Hosting / Infrastructure",
+          "account_category": "Infrastructure",
+          "statement_line": "Cost of Revenue",
+          "actual": 224592.62,
+          "base": 225065.11,
+          "variance": -472.49,
+          "oi_impact": 472.49,
+          "share_of_department_oi_impact": 0.06697,
+          "favorable": true
+        },
+        {
+          "rank": 4,
+          "department_name": "Corporate / Company",
+          "account_id": "REV_SVC",
+          "account_name": "Services Revenue",
+          "account_category": "Services",
+          "statement_line": "Revenue",
+          "actual": 137349.01,
+          "base": 136996.16,
+          "variance": 352.85,
+          "oi_impact": 352.85,
+          "share_of_department_oi_impact": 0.05001,
+          "favorable": true
+        },
+        {
+          "rank": 5,
+          "department_name": "Corporate / Company",
+          "account_id": "COGS_PAY",
+          "account_name": "Payment Processing",
+          "account_category": "Payments",
+          "statement_line": "Cost of Revenue",
+          "actual": 37790.6,
+          "base": 37693.51,
+          "variance": 97.09,
+          "oi_impact": -97.09,
+          "share_of_department_oi_impact": 0.01376,
+          "favorable": false
+        }
+      ],
+      "result_hash": "4491bd019fe7a01f",
+      "dimension": null
+    },
+    "second_driver_decomposition": {
+      "step": 6,
+      "tool": "decompose_variance",
+      "params": {
+        "period": "2024-06-01",
+        "department_id": "SM",
+        "comparison": "actual_vs_budget",
+        "top_n": 5
+      },
+      "rows": [
+        {
+          "rank": 1,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_MKT",
+          "account_name": "Paid Marketing",
+          "account_category": "Marketing",
+          "statement_line": "Operating Expenses",
+          "actual": 176174.46,
+          "base": 186000.0,
+          "variance": -9825.54,
+          "oi_impact": 9825.54,
+          "share_of_department_oi_impact": 0.62035,
+          "favorable": true
+        },
+        {
+          "rank": 2,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_SAL",
+          "account_name": "Salaries",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 537084.09,
+          "base": 531666.67,
+          "variance": 5417.42,
+          "oi_impact": -5417.42,
+          "share_of_department_oi_impact": 0.34204,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_COMM",
+          "account_name": "Commissions",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 117727.73,
+          "base": 117425.28,
+          "variance": 302.45,
+          "oi_impact": -302.45,
+          "share_of_department_oi_impact": 0.0191,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_EVENTS",
+          "account_name": "Events",
+          "account_category": "Marketing",
+          "statement_line": "Operating Expenses",
+          "actual": 36206.79,
+          "base": 36500.0,
+          "variance": -293.21,
+          "oi_impact": 293.21,
+          "share_of_department_oi_impact": 0.01851,
+          "favorable": true
+        },
+        {
+          "rank": 5,
+          "department_name": "Sales & Marketing",
+          "account_id": "SM_SW",
+          "account_name": "Sales Software",
+          "account_category": "Software",
+          "statement_line": "Operating Expenses",
+          "actual": 22400.0,
+          "base": 22400.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        }
+      ],
+      "result_hash": "e1d04e764ff2aca6",
+      "dimension": null
+    },
+    "third_driver_decomposition": {
+      "step": 7,
+      "tool": "decompose_variance",
+      "params": {
+        "period": "2024-06-01",
+        "department_id": "RND",
+        "comparison": "actual_vs_budget",
+        "top_n": 5
+      },
+      "rows": [
+        {
+          "rank": 1,
+          "department_name": "Research & Development",
+          "account_id": "RND_SAL",
+          "account_name": "Salaries",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 584519.85,
+          "base": 574000.0,
+          "variance": 10519.85,
+          "oi_impact": -10519.85,
+          "share_of_department_oi_impact": 0.53603,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "department_name": "Research & Development",
+          "account_id": "RND_CONTRACT",
+          "account_name": "Contractors",
+          "account_category": "Contractors",
+          "statement_line": "Operating Expenses",
+          "actual": 84474.21,
+          "base": 93000.0,
+          "variance": -8525.79,
+          "oi_impact": 8525.79,
+          "share_of_department_oi_impact": 0.43443,
+          "favorable": true
+        },
+        {
+          "rank": 3,
+          "department_name": "Research & Development",
+          "account_id": "RND_CLOUD",
+          "account_name": "Cloud Development Tools",
+          "account_category": "Software",
+          "statement_line": "Operating Expenses",
+          "actual": 62579.81,
+          "base": 62000.0,
+          "variance": 579.81,
+          "oi_impact": -579.81,
+          "share_of_department_oi_impact": 0.02954,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "department_name": "Research & Development",
+          "account_id": "RND_RECRUIT",
+          "account_name": "Recruiting",
+          "account_category": "Recruiting",
+          "statement_line": "Operating Expenses",
+          "actual": 25750.0,
+          "base": 25750.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 5,
+          "department_name": "Research & Development",
+          "account_id": "RND_SW",
+          "account_name": "Software",
+          "account_category": "Software",
+          "statement_line": "Operating Expenses",
+          "actual": 28600.0,
+          "base": 28600.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        }
+      ],
+      "result_hash": "26e212f27c88d46c",
+      "dimension": null
+    },
+    "fourth_driver_decomposition": {
+      "step": 8,
+      "tool": "decompose_variance",
+      "params": {
+        "period": "2024-06-01",
+        "department_id": "GA",
+        "comparison": "actual_vs_budget",
+        "top_n": 5
+      },
+      "rows": [
+        {
+          "rank": 1,
+          "department_name": "General & Administrative",
+          "account_id": "GA_SAL",
+          "account_name": "Salaries",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 201266.97,
+          "base": 200000.0,
+          "variance": 1266.97,
+          "oi_impact": -1266.97,
+          "share_of_department_oi_impact": 0.5874,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "department_name": "General & Administrative",
+          "account_id": "GA_LEGAL",
+          "account_name": "Legal & Professional Fees",
+          "account_category": "Legal & Professional",
+          "statement_line": "Operating Expenses",
+          "actual": 46889.96,
+          "base": 46000.0,
+          "variance": 889.96,
+          "oi_impact": -889.96,
+          "share_of_department_oi_impact": 0.4126,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "department_name": "General & Administrative",
+          "account_id": "GA_ADMIN",
+          "account_name": "Office / Admin",
+          "account_category": "Office",
+          "statement_line": "Operating Expenses",
+          "actual": 18400.0,
+          "base": 18400.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "department_name": "General & Administrative",
+          "account_id": "GA_FAC",
+          "account_name": "Facilities",
+          "account_category": "Facilities",
+          "statement_line": "Operating Expenses",
+          "actual": 55750.0,
+          "base": 55750.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 5,
+          "department_name": "General & Administrative",
+          "account_id": "GA_INS",
+          "account_name": "Insurance",
+          "account_category": "Insurance",
+          "statement_line": "Operating Expenses",
+          "actual": 22300.0,
+          "base": 22300.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        }
+      ],
+      "result_hash": "c52336dd199618c1",
+      "dimension": null
+    },
+    "fifth_driver_decomposition": {
+      "step": 9,
+      "tool": "decompose_variance",
+      "params": {
+        "period": "2024-06-01",
+        "department_id": "CS",
+        "comparison": "actual_vs_budget",
+        "top_n": 5
+      },
+      "rows": [
+        {
+          "rank": 1,
+          "department_name": "Customer Success",
+          "account_id": "CS_SAL",
+          "account_name": "Salaries",
+          "account_category": "Personnel",
+          "statement_line": "Operating Expenses",
+          "actual": 187698.28,
+          "base": 186666.67,
+          "variance": 1031.61,
+          "oi_impact": -1031.61,
+          "share_of_department_oi_impact": 1.0,
+          "favorable": false
+        },
+        {
+          "rank": 2,
+          "department_name": "Customer Success",
+          "account_id": "CS_SW",
+          "account_name": "Customer Success Software",
+          "account_category": "Software",
+          "statement_line": "Operating Expenses",
+          "actual": 20550.0,
+          "base": 20550.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 3,
+          "department_name": "Customer Success",
+          "account_id": "CS_TE",
+          "account_name": "Travel & Entertainment",
+          "account_category": "Travel",
+          "statement_line": "Operating Expenses",
+          "actual": 10300.0,
+          "base": 10300.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        },
+        {
+          "rank": 4,
+          "department_name": "Customer Success",
+          "account_id": "CS_TRAIN",
+          "account_name": "Training / Enablement",
+          "account_category": "Training",
+          "statement_line": "Operating Expenses",
+          "actual": 12350.0,
+          "base": 12350.0,
+          "variance": 0.0,
+          "oi_impact": -0.0,
+          "share_of_department_oi_impact": 0.0,
+          "favorable": false
+        }
+      ],
+      "result_hash": "572f9ce99a10233b",
+      "dimension": null
+    },
+    "compensation_decomposition": {
+      "step": 10,
+      "tool": "get_comp_decomposition",
+      "params": {
+        "period": "2024-06-01",
+        "department_id": null
+      },
+      "rows": [
+        {
+          "month": "2024-06-01",
+          "department_id": "RND",
+          "department_name": "Research & Development",
+          "salary_budget": 574000.0,
+          "salary_actual": 584519.85,
+          "salary_variance": 10519.85,
+          "hc_impact": 0.0,
+          "rate_impact": 10519.85,
+          "decomp_residual": 0.0,
+          "favorable": false
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "SM",
+          "department_name": "Sales & Marketing",
+          "salary_budget": 531666.67,
+          "salary_actual": 537084.09,
+          "salary_variance": 5417.42,
+          "hc_impact": 0.0,
+          "rate_impact": 5417.43,
+          "decomp_residual": -0.01,
+          "favorable": false
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "GA",
+          "department_name": "General & Administrative",
+          "salary_budget": 200000.0,
+          "salary_actual": 201266.97,
+          "salary_variance": 1266.97,
+          "hc_impact": 0.0,
+          "rate_impact": 1266.97,
+          "decomp_residual": 0.0,
+          "favorable": false
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "CS",
+          "department_name": "Customer Success",
+          "salary_budget": 186666.67,
+          "salary_actual": 187698.28,
+          "salary_variance": 1031.61,
+          "hc_impact": 0.0,
+          "rate_impact": 1031.62,
+          "decomp_residual": -0.01,
+          "favorable": false
+        }
+      ],
+      "result_hash": "3c47bcc6817ffa3a",
+      "dimension": null
+    },
+    "revenue_decomposition": {
+      "step": 11,
+      "tool": "get_revenue_decomposition",
+      "params": {
+        "period": "2024-06-01"
+      },
+      "rows": [
+        {
+          "month": "2024-06-01",
+          "rev_budget": 1957087.96,
+          "rev_actual": 1962128.75,
+          "rev_variance": 5040.79,
+          "volume_impact": 0.0,
+          "price_impact": 5040.79,
+          "decomp_residual": 0.0,
+          "favorable": true
+        }
+      ],
+      "result_hash": "4acb780b225c4bb4",
+      "dimension": null
+    },
+    "arr_bridge": {
+      "step": 12,
+      "tool": "get_arr_bridge",
+      "params": {
+        "period": "2024-06-01"
+      },
+      "rows": [
+        {
+          "month": "2024-06-01",
+          "starting_arr": 23260818.29,
+          "new_arr": 436487.91,
+          "expansion_arr": 126762.74,
+          "contraction_arr": 89903.11,
+          "churned_arr": 188620.81,
+          "ending_arr": 23545545.02,
+          "bridge_diff": 0.0,
+          "customers_start": 520,
+          "new_customers": 14,
+          "churned_customers": 6,
+          "customers_end": 528,
+          "arpa": 44593.84,
+          "nrr": 0.99348,
+          "grr": 0.98803,
+          "nrr_ttm": null,
+          "grr_ttm": null
+        }
+      ],
+      "result_hash": "8adc53cbed7df0c3",
+      "dimension": null
+    },
+    "headcount": {
+      "step": 13,
+      "tool": "get_headcount_movement",
+      "params": {
+        "period": "2024-06-01",
+        "department_id": null
+      },
+      "rows": [
+        {
+          "month": "2024-06-01",
+          "department_id": "CS",
+          "department_name": "Customer Success",
+          "actual_headcount": 20,
+          "budget_headcount": 20,
+          "forecast_headcount": 20,
+          "hc_var_vs_budget": 0,
+          "hc_var_vs_forecast": 0
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "GA",
+          "department_name": "General & Administrative",
+          "actual_headcount": 16,
+          "budget_headcount": 16,
+          "forecast_headcount": 16,
+          "hc_var_vs_budget": 0,
+          "hc_var_vs_forecast": 0
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "RND",
+          "department_name": "Research & Development",
+          "actual_headcount": 41,
+          "budget_headcount": 41,
+          "forecast_headcount": 41,
+          "hc_var_vs_budget": 0,
+          "hc_var_vs_forecast": 0
+        },
+        {
+          "month": "2024-06-01",
+          "department_id": "SM",
+          "department_name": "Sales & Marketing",
+          "actual_headcount": 44,
+          "budget_headcount": 44,
+          "forecast_headcount": 44,
+          "hc_var_vs_budget": 0,
+          "hc_var_vs_forecast": 0
+        }
+      ],
+      "result_hash": "f2db471be6fe690c",
+      "dimension": null
+    },
+    "opex_trend": {
+      "step": 14,
+      "tool": "get_trend",
+      "params": {
+        "metric": "opex",
+        "start_period": "2024-01-01",
+        "end_period": "2024-06-01"
+      },
+      "rows": [
+        {
+          "month": "2024-01-01",
+          "value": 2142545.91,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-02-01",
+          "value": 2190754.45,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-03-01",
+          "value": 2236445.73,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-04-01",
+          "value": 2236613.71,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-05-01",
+          "value": 2280358.63,
+          "metric": "opex"
+        },
+        {
+          "month": "2024-06-01",
+          "value": 2300122.15,
+          "metric": "opex"
+        }
+      ],
+      "result_hash": "8c848540709a1ee8",
+      "dimension": null
+    }
+  },
+  "outcome": "COMPLETED",
+  "missing_sections": [],
+  "refusal_reason": "",
+  "narrative": {
+    "status": "accepted",
+    "text": "For June 2024, revenue of $2.10M came in ahead of plan by $5,394 against a $2.09M budget. Gross margin was 83.0%. The largest drivers versus budget were: Corporate / Company (CORP) $6,861 favorable; Sales & Marketing (SM) $4,399 favorable; Research & Development (RND) $2,574 unfavorable; General & Administrative (GA) $2,157 unfavorable; Customer Success (CS) $1,032 unfavorable. In Research & Development, the $10.5K salary variance splits into $0 from headcount versus plan and $10.5K from rate. Ending ARR was $23.55M, with $436.5K new and $188.6K churned; trailing-twelve-month NRR was n/a and GRR n/a.",
+    "source": "injection",
+    "attempts": 0,
+    "audit_ran": true,
+    "audit_passed": true,
+    "deterministic_by_choice": true,
+    "violations": [],
+    "entity_flags": [],
+    "matched": [
+      [
+        "$2.10M",
+        2100000.0,
+        "get_operating_metrics revenue"
+      ],
+      [
+        "$5,394",
+        5394.0,
+        "Revenue variance"
+      ],
+      [
+        "$2.09M",
+        2089999.9999999998,
+        "Revenue budget/base"
+      ],
+      [
+        "$6,861",
+        6861.0,
+        "Corporate / Company OI impact"
+      ],
+      [
+        "$4,399",
+        4399.0,
+        "Sales & Marketing OI impact"
+      ],
+      [
+        "$2,574",
+        2574.0,
+        "Research & Development OI impact (magnitude)"
+      ],
+      [
+        "$2,157",
+        2157.0,
+        "General & Administrative OI impact (magnitude)"
+      ],
+      [
+        "$1,032",
+        1032.0,
+        "Customer Success OI impact (magnitude)"
+      ],
+      [
+        "$10.5K",
+        10500.0,
+        "Salaries variance"
+      ],
+      [
+        "$0",
+        0.0,
+        "Sales Software variance"
+      ],
+      [
+        "$10.5K",
+        10500.0,
+        "Salaries variance"
+      ],
+      [
+        "$23.55M",
+        23550000.0,
+        "get_operating_metrics ending ARR"
+      ],
+      [
+        "$436.5K",
+        436500.0,
+        "get_arr_bridge new ARR"
+      ],
+      [
+        "$188.6K",
+        188600.0,
+        "get_arr_bridge churned ARR"
+      ],
+      [
+        "83.0%",
+        0.83,
+        "get_operating_metrics gross margin"
+      ]
+    ],
+    "reason": ""
+  },
+  "gates": {
+    "run_id": "f59a39416440",
+    "artifact_hash": "bf32284c59d1d702",
+    "audit_ok": true,
+    "published": true,
+    "plan_review": {
+      "decision": "APPROVED",
+      "reviewer": "deterministic build",
+      "note": "hand-written canonical plan",
+      "timestamp": "2026-08-24T02:31:49.211212+00:00",
+      "plan_summary": [
+        {
+          "step": 1,
+          "tool": "list_periods",
+          "params": {},
+          "purpose": "period_coverage",
+          "optional": true,
+          "resolved_at_runtime": []
+        },
+        {
+          "step": 2,
+          "tool": "get_operating_metrics",
+          "params": {
+            "period": "$GOAL.period"
+          },
+          "purpose": "operating_headline",
+          "optional": false,
+          "resolved_at_runtime": [
+            "period"
+          ]
+        },
+        {
+          "step": 3,
+          "tool": "get_pl_summary",
+          "params": {
+            "period": "$GOAL.period",
+            "comparison": "$GOAL.comparison"
+          },
+          "purpose": "pl_summary",
+          "optional": false,
+          "resolved_at_runtime": [
+            "comparison",
+            "period"
+          ]
+        },
+        {
+          "step": 4,
+          "tool": "rank_variance_drivers",
+          "params": {
+            "period": "$GOAL.period",
+            "dimension": "department",
+            "comparison": "$GOAL.comparison",
+            "top_n": 5
+          },
+          "purpose": "department_drivers",
+          "optional": false,
+          "resolved_at_runtime": [
+            "comparison",
+            "period"
+          ]
+        },
+        {
+          "step": 5,
+          "tool": "decompose_variance",
+          "params": {
+            "period": "$GOAL.period",
+            "department_id": "$STEP_4.rows[0].member",
+            "comparison": "$GOAL.comparison",
+            "top_n": 5
+          },
+          "purpose": "top_driver_decomposition",
+          "optional": false,
+          "resolved_at_runtime": [
+            "comparison",
+            "department_id",
+            "period"
+          ]
+        },
+        {
+          "step": 6,
+          "tool": "decompose_variance",
+          "params": {
+            "period": "$GOAL.period",
+            "department_id": "$STEP_4.rows[1].member",
+            "comparison": "$GOAL.comparison",
+            "top_n": 5
+          },
+          "purpose": "second_driver_decomposition",
+          "optional": false,
+          "resolved_at_runtime": [
+            "comparison",
+            "department_id",
+            "period"
+          ]
+        },
+        {
+          "step": 7,
+          "tool": "decompose_variance",
+          "params": {
+            "period": "$GOAL.period",
+            "department_id": "$STEP_4.rows[2].member",
+            "comparison": "$GOAL.comparison",
+            "top_n": 5
+          },
+          "purpose": "third_driver_decomposition",
+          "optional": false,
+          "resolved_at_runtime": [
+            "comparison",
+            "department_id",
+            "period"
+          ]
+        },
+        {
+          "step": 8,
+          "tool": "decompose_variance",
+          "params": {
+            "period": "$GOAL.period",
+            "department_id": "$STEP_4.rows[3].member",
+            "comparison": "$GOAL.comparison",
+            "top_n": 5
+          },
+          "purpose": "fourth_driver_decomposition",
+          "optional": false,
+          "resolved_at_runtime": [
+            "comparison",
+            "department_id",
+            "period"
+          ]
+        },
+        {
+          "step": 9,
+          "tool": "decompose_variance",
+          "params": {
+            "period": "$GOAL.period",
+            "department_id": "$STEP_4.rows[4].member",
+            "comparison": "$GOAL.comparison",
+            "top_n": 5
+          },
+          "purpose": "fifth_driver_decomposition",
+          "optional": false,
+          "resolved_at_runtime": [
+            "comparison",
+            "department_id",
+            "period"
+          ]
+        },
+        {
+          "step": 10,
+          "tool": "get_comp_decomposition",
+          "params": {
+            "period": "$GOAL.period"
+          },
+          "purpose": "compensation_decomposition",
+          "optional": false,
+          "resolved_at_runtime": [
+            "period"
+          ]
+        },
+        {
+          "step": 11,
+          "tool": "get_revenue_decomposition",
+          "params": {
+            "period": "$GOAL.period"
+          },
+          "purpose": "revenue_decomposition",
+          "optional": false,
+          "resolved_at_runtime": [
+            "period"
+          ]
+        },
+        {
+          "step": 12,
+          "tool": "get_arr_bridge",
+          "params": {
+            "period": "$GOAL.period"
+          },
+          "purpose": "arr_bridge",
+          "optional": false,
+          "resolved_at_runtime": [
+            "period"
+          ]
+        },
+        {
+          "step": 13,
+          "tool": "get_headcount_movement",
+          "params": {
+            "period": "$GOAL.period"
+          },
+          "purpose": "headcount",
+          "optional": false,
+          "resolved_at_runtime": [
+            "period"
+          ]
+        },
+        {
+          "step": 14,
+          "tool": "get_trend",
+          "params": {
+            "metric": "opex",
+            "start_period": "$GOAL.fy_start",
+            "end_period": "$GOAL.period"
+          },
+          "purpose": "opex_trend",
+          "optional": true,
+          "resolved_at_runtime": [
+            "end_period",
+            "start_period"
+          ]
+        }
+      ]
+    },
+    "approval": {
+      "decision": "APPROVED",
+      "approver": "deterministic build",
+      "note": "canonical plan, deterministic narrative, audit clean",
+      "timestamp": "2026-08-24T02:31:49.283203+00:00",
+      "artifact_hash": "bf32284c59d1d702"
+    }
+  }
+}

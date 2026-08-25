@@ -18,6 +18,16 @@
       "rows": 5,
       "tool": "rank_variance_drivers"
     },
+    "fifth_driver_decomposition": {
+      "hash": "5b28f36bd84e615d",
+      "rows": 5,
+      "tool": "decompose_variance"
+    },
+    "fourth_driver_decomposition": {
+      "hash": "8a2783546c8e6248",
+      "rows": 4,
+      "tool": "decompose_variance"
+    },
     "headcount": {
       "hash": "e47e49225ee35bce",
       "rows": 4,
@@ -50,6 +60,11 @@
     },
     "second_driver_decomposition": {
       "hash": "260332e57f26cde6",
+      "rows": 5,
+      "tool": "decompose_variance"
+    },
+    "third_driver_decomposition": {
+      "hash": "fe6e6e0fd7b34ce7",
       "rows": 5,
       "tool": "decompose_variance"
     },

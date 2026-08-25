@@ -34,7 +34,7 @@ from guardrails.numeric_audit import extract_mentions  # noqa: E402
 # ---------------------------------------------------------------------------
 def _load_formatters():
     """Pull money()/pct() out of app.py without importing streamlit."""
-    src = open(os.path.join(APP, "app.py")).read()
+    src = open(os.path.join(APP, "app.py"), encoding="utf-8").read()
     start = src.index("def money(")
     end = src.index("def month_label(")
     ns = {"pd": pd}

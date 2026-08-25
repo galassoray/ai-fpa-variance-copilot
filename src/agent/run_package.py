@@ -282,7 +282,24 @@ def render(result) -> str:
     return "\n".join(out)
 
 
+def _utf8_stdout():
+    """Make stdout safe for the characters this CLI prints.
+
+    On a console whose code page is not UTF-8 -- the Windows default -- printing
+    a middle dot or an arrow raises UnicodeEncodeError and the command dies
+    after doing all the work. Reconfiguring with errors="replace" means a
+    console that cannot render a character degrades to a placeholder instead of
+    losing the whole run.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):      # already wrapped, or not a tty
+            pass
+
+
 def main(argv=None):
+    _utf8_stdout()
     ap = argparse.ArgumentParser(description="Deterministic FP&A variance package.")
     ap.add_argument("period", help="reporting period, e.g. 2025-09")
     ap.add_argument("--comparison", default="actual_vs_budget",
@@ -292,6 +309,15 @@ def main(argv=None):
                     help="add deterministic commentary (no model, no key needed)")
     ap.add_argument("--no-trace", action="store_true",
                     help="hide the per-figure audit trace")
+    ap.add_argument("--deck", nargs="?", const="auto", default=None,
+                    metavar="PATH",
+                    help="also write a PowerPoint variance deck")
+    ap.add_argument("--brief", action="store_true",
+                    help="print the computed 'where to look' prioritisation")
+    ap.add_argument("--reports", nargs="?", const=".", default=None,
+                    metavar="DIR",
+                    help="write the Word deliverables: flash, monthly memo, "
+                         "and one budget-owner packet per department")
     args = ap.parse_args(argv)
 
     con = mz.connect_readonly()
@@ -310,7 +336,12 @@ def main(argv=None):
 
     print(render(result))
 
-    if args.narrate:
+    if args.brief:
+        from agent.briefing import build_briefing, render_briefing
+        print(render_briefing(build_briefing(result, goal)))
+
+    candidate = None
+    if args.narrate or args.deck or args.reports:
         import run_pipeline as rp
         from agent.narrate import narrate, render_narrative
         from guardrails import entity_audit as ea
@@ -318,9 +349,37 @@ def main(argv=None):
         candidate = narrate(result, goal, client=None,
                             all_entity_names=ea.canonical_entity_names(rp.load()),
                             mode="inject")
-        print(render_narrative(candidate, show_trace=not args.no_trace))
+        if args.narrate:
+            print(render_narrative(candidate, show_trace=not args.no_trace))
         if not candidate.publishable:
             return 1
+
+    if args.reports:
+        from agent.gates import PublicationPacket
+        from agent.reports import build_all
+
+        pkt = PublicationPacket(result, candidate)
+        if candidate is not None and candidate.publishable:
+            pkt.approve("CLI", "deterministic run, audit clean")
+        written = build_all(result, goal, candidate, pkt, args.reports)
+        print(f"\n{len(written)} document(s) written:")
+        for path in written:
+            print(f"  {path}")
+
+    if args.deck:
+        from agent.deck import build_deck
+        from agent.gates import PublicationPacket
+
+        packet = PublicationPacket(result, candidate)
+        if candidate is not None and candidate.publishable:
+            packet.approve("CLI", "deterministic run, audit clean")
+        d = build_deck(result, goal, candidate, packet)
+        path = (args.deck if args.deck != "auto"
+                else f"variance-review-{str(goal['period'])[:7]}.pptx")
+        d.prs.save(path)
+        print(f"\nDeck written: {path}")
+        print(f"  {len(d.prs.slides._sldIdLst)} slides · "
+              f"{len(d.provenance)} figures, each traced to a computed value")
 
     return 0 if result.complete else 1
 
