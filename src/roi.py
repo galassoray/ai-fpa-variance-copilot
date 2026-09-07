@@ -361,3 +361,145 @@ if __name__ == "__main__":
 
     tables = gen.build_dataset(Scenario())
     print(report(rp.compute(tables), tables))
+
+
+# ==========================================================================
+# the close-cycle deliverables
+# ==========================================================================
+"""
+The commentary ROI above prices ONE artifact. The agent now produces eight --
+a board deck, a flash, a monthly memo and a budget-owner packet per department
+-- and loading a period recomputes the whole dataset.
+
+Those are the two buckets an analyst would name, and they are the two the
+survey evidence describes:
+
+  * AFP and APQC, surveying 430+ FP&A professionals, found 25% of time on
+    value-added analysis, 42% gathering data and 33% administering processes.
+  * FP&A Trends 2025 put 46% of FP&A time on data collection and validation.
+  * Prophix, 300+ FP&A leaders, found 51% on collection or validation.
+  * McKinsey found teams using AI for financial modelling cut time spent on
+    data capture, presentation and manipulation by up to 65%.
+
+They are cited as CONTEXT, never as this tool's own result. The measured half
+here is what the run ledger recorded; the assumed half is what a human would
+have spent, and it stays a slider because measuring it would mean timing real
+analysts at a real employer, which this project deliberately has no access to.
+"""
+
+#: Minutes to build each artifact by hand, from a finished close pack. These
+#: are the ASSUMED half and every one is adjustable in the UI.
+ARTIFACT_MINUTES = {
+    "Board deck": 95.0,
+    "Flash report": 20.0,
+    "Monthly variance memo": 70.0,
+    "Budget-owner packet (each)": 22.0,
+}
+
+#: Assembling one period by hand: pulling the extract, reconciling it, loading
+#: it, and re-pointing every downstream schedule at the new month.
+ASSEMBLY_MINUTES = 150.0
+
+
+@dataclass(frozen=True)
+class DeliverableBaseline:
+    deck_minutes: float = ARTIFACT_MINUTES["Board deck"]
+    flash_minutes: float = ARTIFACT_MINUTES["Flash report"]
+    memo_minutes: float = ARTIFACT_MINUTES["Monthly variance memo"]
+    packet_minutes: float = ARTIFACT_MINUTES["Budget-owner packet (each)"]
+    assembly_minutes: float = ASSEMBLY_MINUTES
+    departments: int = 5
+    loaded_cost_per_hour: float = 85.0
+    #: Reviewing what the tool produced still costs something. Claiming
+    #: otherwise would be the fabricated figure this project exists to avoid.
+    review_minutes_per_artifact: float = 4.0
+    review_minutes_for_assembly: float = 10.0
+
+
+@dataclass
+class DeliverableResult:
+    by_hand_minutes: float
+    with_tool_minutes: float
+    breakdown: dict
+    artifacts: int
+
+    @property
+    def saved_minutes(self) -> float:
+        return self.by_hand_minutes - self.with_tool_minutes
+
+    @property
+    def pct_reduction(self) -> float:
+        return (self.saved_minutes / self.by_hand_minutes
+                if self.by_hand_minutes else 0.0)
+
+    def annual_hours(self) -> float:
+        return self.saved_minutes * 12 / 60.0
+
+    def annual_dollars(self, base: DeliverableBaseline) -> float:
+        return self.annual_hours() * base.loaded_cost_per_hour
+
+
+def deliverable_roi(base: DeliverableBaseline) -> DeliverableResult:
+    """Price one close cycle's deliverables plus the data assembly.
+
+    Machine time is not modelled as zero but as REVIEW time: the artifacts are
+    produced in well under a second, and what a person actually spends is
+    reading them and signing off. A model that showed the tool costing nothing
+    would be the one unverifiable number on the page.
+    """
+    packets = base.packet_minutes * base.departments
+    by_hand = {
+        "Assemble and load the period": base.assembly_minutes,
+        "Board deck": base.deck_minutes,
+        "Flash report": base.flash_minutes,
+        "Monthly variance memo": base.memo_minutes,
+        f"Budget-owner packets (\u00d7{base.departments})": packets,
+    }
+
+    artifacts = 3 + base.departments
+    with_tool = {
+        "Assemble and load the period": base.review_minutes_for_assembly,
+        "Board deck": base.review_minutes_per_artifact,
+        "Flash report": base.review_minutes_per_artifact,
+        "Monthly variance memo": base.review_minutes_per_artifact,
+        f"Budget-owner packets (\u00d7{base.departments})":
+            base.review_minutes_per_artifact * base.departments,
+    }
+
+    return DeliverableResult(
+        by_hand_minutes=sum(by_hand.values()),
+        with_tool_minutes=sum(with_tool.values()),
+        breakdown={"by_hand": by_hand, "with_tool": with_tool},
+        artifacts=artifacts,
+    )
+
+
+def deliverable_sensitivity(base: DeliverableBaseline) -> list:
+    """Conservative, central and generous, because a point estimate invites
+    an argument about the point rather than about the shape."""
+    out = []
+    for label, factor in (("Conservative (\u221240%)", 0.6),
+                          ("Central", 1.0),
+                          ("Generous (+40%)", 1.4)):
+        scaled = DeliverableBaseline(
+            deck_minutes=base.deck_minutes * factor,
+            flash_minutes=base.flash_minutes * factor,
+            memo_minutes=base.memo_minutes * factor,
+            packet_minutes=base.packet_minutes * factor,
+            assembly_minutes=base.assembly_minutes * factor,
+            departments=base.departments,
+            loaded_cost_per_hour=base.loaded_cost_per_hour,
+            review_minutes_per_artifact=base.review_minutes_per_artifact,
+            review_minutes_for_assembly=base.review_minutes_for_assembly,
+        )
+        r = deliverable_roi(scaled)
+        out.append({
+            "Scenario": label,
+            "By hand (min)": round(r.by_hand_minutes),
+            "With tool (min)": round(r.with_tool_minutes),
+            "Saved (min)": round(r.saved_minutes),
+            "Reduction %": f"{r.pct_reduction * 100:.0f}%",
+            "Hours/yr": round(r.annual_hours()),
+            "$/yr": round(r.annual_dollars(scaled)),
+        })
+    return out

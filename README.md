@@ -1,10 +1,13 @@
 # AI FP&A Variance Commentary Copilot
 
 A finance-owned tool that turns a monthly close into executive-ready variance
-commentary — where **code computes every number and the model only explains**, so
-leadership gets faster commentary without ever trusting an AI-generated figure.
+commentary and the deliverables that go with it — where **code computes every
+number and the model only explains**, so leadership gets faster commentary
+without ever trusting an AI-generated figure.
 
 Built on 100% synthetic Series C SaaS financials. No real-company data of any kind.
+
+**▶ [Live demo](https://ai-fpa-variance-copilot-ydenei544tse8dcgexffwv.streamlit.app)** — no login, no API key needed.
 
 ---
 
@@ -29,87 +32,118 @@ verifies every dollar and percentage it wrote against the computed set. Anything
 that matches nothing is a fabrication and never reaches output — the guarantee
 rests on the audit catching the model, not on the model behaving.
 
+That line holds everywhere downstream. The PowerPoint generator, the Word
+generators and the prioritisation module contain no arithmetic on a financial
+value at all: there is exactly one way a figure reaches a page, and it is by
+having been retrieved.
+
 ---
 
-## What's built
+## What it does
 
-**Phase 1 — deterministic foundation (complete).**
-Synthetic SaaS dataset (~$30M ending ARR, ~150 employees, 24 months, star schema
-in DuckDB) with six business stories engineered into FY2025. A sign-aware variance
-engine, a SaaS KPI layer (ARR bridge, NRR/GRR, margins, per-head), and driver
-decompositions (comp → headcount vs rate; revenue → volume vs price).
-**11/11 validation checks and 11/11 golden tests pass**; salaries tie to headcount
-to the penny, decompositions reconcile, the ARR bridge and operating-income
-identities hold.
+### The copilot — one month, explained
 
-**Phase 2 — guarded narrative layer + eval (complete).**
-A fact pack that packages computed facts and the whitelist of allowed figures; a
-precision-aware numeric audit; an entity audit; a provider-agnostic LLM client
-(real Anthropic + deterministic replay); and orchestration that re-prompts on a
-bad draft and falls back to a deterministic narrative rather than surface a
-fabrication. The eval proves it:
+Pick a reporting month and get the variance picture: P&L against plan, ranked
+drivers, account-level detail, compensation split into headcount versus rate,
+revenue split into volume versus price, the ARR bridge, headcount against plan.
+Every figure is computed in SQL. The commentary is written by a model over those
+figures and audited before it is shown.
+
+### The close-cycle agent — a plan, executed and audited
+
+Two modes.
+
+**Standard monthly close** runs a hand-written plan of 14 tool calls in about
+40 milliseconds, with no model and no credential. Same steps every period.
+
+**Ask a question** hands the planning to a model. It writes a plan, static
+validation gates it *before any query runs*, the orchestrator executes it, and
+the narrative is audited before publication. Ask something the tools cannot
+answer — *"what is our cash runway?"* — and it **declines**, rather than
+answering a different question and presenting it as the one asked.
+
+Seventeen parameterised SQL tools over materialised marts. No free-text SQL, and
+no financial parameter type exists, so a model cannot pass a number into a query
+even in principle. Values move between steps by symbolic reference
+(`$STEP_4.rows[0].member`), resolved by the orchestrator from its own ledger —
+the model never re-reads a result and retypes a figure.
+
+### Where to look — prioritisation, computed
+
+Ranked by impact on operating income, with the account detail, compensation
+split and headcount underneath each driver. The ranking, the materiality cut and
+the evidence attached to each item are all computed in SQL.
+
+**It states no recommendation, deliberately.** A recommendation is not a
+retrieved number: nothing could verify it, and the publication gate would pass it
+straight through. The tool puts an analyst in front of the exact evidence a
+decision needs, and leaves the judgment where it belongs.
+
+### Deliverables
+
+After sign-off, one run produces eight artifacts:
+
+| Artifact | What it is |
+|---|---|
+| **Board deck** (`.pptx`) | 12 slides, native PowerPoint charts, appendix carrying the run ledger |
+| **Flash report** (`.docx`) | Half a page for day three or four |
+| **Monthly variance memo** (`.docx`) | The full commentary |
+| **Budget-owner packets** (`.docx` ×5) | One per department, containing only that owner's numbers and a sign-off block |
+
+Every document ends with an **intentionally blank** assessment section, with a
+note explaining why: the tool assembles every fact and the analyst supplies the
+judgment.
+
+### Load a period
+
+Download an Excel template — one sheet per table, an example row showing the
+exact format, a reference sheet listing every valid code — fill it in, and upload
+it. The reporting-month list, every table, the company aggregates and the agent
+all update.
+
+Validation is the feature. It refuses, naming the table, the reason and the row:
+a period that already exists, an unknown department or account, a non-numeric
+amount, a malformed month, duplicate keys. It accepts `$` and accounting
+parentheses, because that is what a finance export writes.
+
+Uploads are session-scoped: the committed dataset is never modified.
+
+---
+
+## What an interviewer can check
+
+Everything below is reproducible from a clean clone.
+
+**The audit does not let fabrications through.** `python eval/run_eval.py` runs
+40 adversarial cases — sentences with known planted fakes plus clean controls —
+and the audit must flag every fake and pass every control.
 
 ```
-HEADLINE: 0 fabricated numbers across 5 generations; 100% adversarial catch rate.
+0 fabricated numbers across 5 generations; 100% adversarial catch rate
+cases scored correctly: 40/40
 ```
 
-- End-to-end, under a deliberately misbehaving model (transient- and
-  persistent-bad drafts), **zero fabricated figures survive to output**; bad drafts
-  are caught, retried, and safely replaced.
-- Planted adversarial fabrications (made-up dollars, near-miss figures, invented
-  percentages, out-of-scope line items) are caught **100%**; clean controls pass.
-- Insufficient data produces a **refusal**, never a guess.
+A second table runs the whole pipeline with the model **deliberately sabotaged**.
+When it fabricates once, the audit catches it and the retry succeeds. When it
+fabricates persistently, the model is refused entirely and the deterministic
+version ships. Fabricated figures reaching output: zero on every row.
 
-**Phase 3 — Streamlit demo (complete).**
-A five-page app (Overview, Variance, Commentary, Guardrails & Eval, Decision log)
-that runs the exact Phase-1 computation layer and Phase-2 guardrails. It is safe
-to share as a public link — the computed metrics, the deterministic narrative, and
-the full "0 fabricated numbers" eval all run with **no API key**. Live model
-generation (Anthropic or OpenAI) is an optional enhancement that activates only
-when a key is present, for a screen-share. The signature element is the **audit
-trace**: every figure in the commentary renders as a chip tied back to the
-computed value it matched. Run with `streamlit run app/app.py`; see `DEPLOY.md`.
+**The tolerance was measured, not chosen.** `MAX_REL_TOL = 0.005` came from
+running the false-verify rate at each precision: 92.9% at one significant figure,
+50.6% at two, 10.7% at three, 0.3% at full precision. The residual is real and is
+stated rather than hidden.
 
-**Phase 4 — live scenario editing, forecast projection, guarded chat (complete).**
+**Every figure in every artifact traces to a computed value.** The tests re-open
+the generated `.pptx` and `.docx` files, read every text frame, table cell and
+chart series back out, and audit them with the same auditor used on the prose.
+Checking a generator against its own bookkeeping would prove only that it is
+self-consistent.
 
-*Scenario editing.* Every **input** is editable from the sidebar — headcount plan,
-average comp, spend baselines, churn, the story multipliers, starting ARR. Nothing
-**derived** is: salary lines stay computed as headcount × comp/12, revenue stays
-derived from the ARR bridge. Move an input and the whole app recomputes in ~0.2s
-with **all 11 validation checks still passing** — asserted for arbitrary scenarios,
-not just the baseline, so changing numbers live in an interview can't break the
-reconciliations. The seed is held fixed, so a change is attributable to the input
-you moved rather than to noise.
+**`python verify_decks.py`** checks any generated deck against ground truth
+recomputed from the pandas layer — including whether it could belong to a
+*different month*, which is the failure that would survive every internal check.
 
-*Forecast.* Actual vs budget over time, plus a projected continuation. The method
-is an explicit choice — linear trend (with R²), run-rate, or driver-based ARR
-continuation — each labeled with what it assumes and ignores. Code computes the
-number; you pick the method; the model never selects it.
-
-*Guarded chat.* Ask anything about the dataset. A precomputed fact index holds
-every computed number (6,528 facts across all 24 months, every department and
-account, YTD, decompositions, retention); deterministic code selects the relevant
-slice per question. Every answer is audited like the commentary, and it **refuses
-rather than estimates** — there's no deterministic fallback for an arbitrary
-question, and a wrong number is worse than no answer.
-
-```
-HEADLINE: 0 fabricated numbers across 5 generations; 100% adversarial catch rate.
-
-WHITELIST SCOPE & WRITE PRECISION (measured, not asserted)
-  figure written as        audit accepts   false-verify (sliced)   (whole set)
-  1 sig fig   e.g. $2M         REJECT              92.9%              100.0%
-  2 sig figs  e.g. $1.7M       REJECT              50.6%               98.8%
-  3 sig figs  e.g. $1.73M      yes                 10.7%               66.8%
-  6 sig figs  e.g. $1,730,055  yes                  0.3%                3.8%
-```
-
-That table is the honest part. It measures two things instead of asserting them:
-sending the chat the **whole** dataset rather than a slice would make the audit
-~6× more likely to wave a fabrication through, and a figure written coarsely
-enough (`$2M`) can't be verified at all — so the audit **rejects** those rather
-than rubber-stamping them. Found by measuring; the earlier eval only planted
-full-precision fabrications, which was the easy case.
+**526 tests.** `python -m pytest tests/ -q`
 
 ---
 
@@ -118,59 +152,83 @@ full-precision fabrications, which was the easy case.
 ```bash
 pip install -r requirements.txt
 
-# Phase 1: generate data, build DB, compute, validate
+# generate data, build the database, compute, validate
 python src/generate_synthetic_data.py
 python src/build_database.py
 cd src && python run_pipeline.py
 python validation/validate_data.py        # 11/11 PASS
 python validation/golden_tests.py         # 11/11 PASS
 
-# Phase 2: the guarded narrative eval
-cd ../eval && python run_eval.py          # 0 fabricated numbers; 100% catch rate
+# the guardrail eval
+cd ../eval && python run_eval.py          # 0 fabricated; 100% catch rate
 
 # full test gate
-cd .. && pytest -q                        # Phase 1 + Phase 2
+cd .. && python -m pytest tests/ -q       # 526 passed
 
-# Phase 3/4: the interactive demo
-streamlit run app/app.py                  # opens the 6-page app in your browser
+# the app
+streamlit run app/app.py
 ```
 
-A live model demo (optional) needs `ANTHROPIC_API_KEY`; everything above runs
-fully offline and deterministically.
+The agent from the command line, no API key required:
+
+```bash
+python src/agent/run_package.py 2025-09 --brief          # where to look
+python src/agent/run_package.py 2025-09 --deck out.pptx  # the board deck
+python src/agent/run_package.py 2025-09 --reports docs/  # all Word documents
+python src/agent/run_agent.py --period 2025-09 --narrate # model-planned
+```
+
+Sample upload files: `python make_january.py`
 
 ---
 
 ## Layout
 
 ```
-ai-fpa-variance-copilot/
-├── decision_log.md          # the "why" behind every choice (read this)
-├── src/
-│   ├── scenario.py          # every editable INPUT lives here          (Phase 4)
-│   ├── generate_synthetic_data.py
-│   ├── build_database.py
-│   ├── calculations/        # variance engine, SaaS metrics, decomposition, projection
-│   ├── validation/          # 11 reconciliation checks + hand-checkable golden tests
-│   ├── narrative/           # fact_pack, prompt, llm_client, generate  (Phase 2)
-│   │                        # fact_index, chat                         (Phase 4)
-│   └── guardrails/          # numeric_audit, entity_audit             (Phase 2)
-├── eval/                    # scenarios, adversarial cases, run_eval  (Phase 2)
-│                            # whitelist_scope (precision measurement) (Phase 4)
-├── tests/                   # pytest gate for both phases
-├── app/                     # Streamlit demo (Phase 3)
-└── outputs/                 # computed tables + validation & eval results
+src/
+  generate_synthetic_data.py   seeded synthetic dataset
+  build_database.py            CSVs -> DuckDB star schema
+  run_pipeline.py              the deterministic computation layer
+  scenario.py                  parametric scenario inputs
+  validation/validate_data.py  11 integrity checks
+  roi.py                       measured / assumed / derived
+  narrative/                   prompt construction, fact packs
+  guardrails/                  numeric audit, entity audit
+  agent/
+    registry.py  tools.py      17 parameterised SQL tools
+    plan.py      planner.py    plan schema, LLM planner, static validation
+    orchestrator.py  ledger.py execution, append-only run ledger
+    facts.py     narrate.py    ledger -> fact pack -> audited narrative
+    briefing.py                computed "where to look"
+    deck.py      reports.py    PowerPoint and Word generators
+    gates.py     replay.py     sign-off, verified replay store
+    ingest.py                  period upload: validate, preview, merge
+app/app.py                     the Streamlit app
+eval/                          adversarial cases and the eval harness
+tests/                         526 tests
+decision_log.md                why each architectural choice was made
 ```
 
-## Guardrail guarantees (what an interviewer can check)
+---
 
-- Every decision-facing number is computed in `src/calculations/`; the LLM never does arithmetic.
-- `guardrails/numeric_audit.py` verifies every `$`/`%` figure in the prose against the computed whitelist within a precision-aware tolerance (honest rounding passes; fabrication fails).
-- Whatever the pipeline returns has passed the audit **by construction** — a persistently misbehaving model yields a deterministic fallback or a refusal, never a fabricated figure.
-- A figure too coarse to verify (`$2M`) is **rejected**, not blessed — verification there would be a rubber stamp.
-- Editing an input can never break a reconciliation: all 11 checks are asserted for arbitrary scenarios.
-- The proof is reproducible offline: `eval/run_eval.py`.
+## What it does not do
 
-Production path: the local prototype proves the logic; production re-points the
-same narrative client at a governed channel (Bedrock / Azure OpenAI / internal
-gateway) with least-privilege read access, logging, and data minimization. Because
-nothing the model emits is trusted as a number, audit exposure is bounded.
+Stated plainly, because the limits are part of the design.
+
+- **It does not recommend actions.** A recommendation cannot be verified, so it
+  is not generated. Documents carry a blank assessment section instead.
+- **It does not compute anything in the model.** Not in the commentary, not in
+  the deck, not in the documents.
+- **It does not run on real data.** Synthetic only, by design.
+- **Retention is aggregate ARR-based, not cohort-based.** A real deployment
+  would want cohort retention; this is a known simplification.
+- **It has no production users.** The deployment path is understood —
+  containerisation, provider abstraction, least-privilege credentials, a
+  governed model channel — but this is a portfolio build, and claiming otherwise
+  would be the same kind of unverifiable assertion the tool exists to prevent.
+
+---
+
+`decision_log.md` records the reasoning behind each architectural choice, and the
+defects found along the way — most of which were found by running the thing, not
+by reading it.

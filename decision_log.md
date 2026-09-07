@@ -811,3 +811,84 @@ Every scripted edit now asserts that it changed the file and that the intended s
 - Choice & why: `materialize.ensure_ready()` builds the database and marts when they are absent, unreadable, or stale -- all three answered the same way, by rebuilding from the committed CSVs. The app calls it once per server behind `st.cache_resource`, with a spinner on the cold start and a hash comparison on every call after. Materialization already knew how to build from source; it simply had never been invoked on a machine that had never run it.
 - The failure path is explicit rather than silent: if preparation fails, the agent page says so and notes that the other pages are unaffected, instead of surfacing a DuckDB stack trace.
 - Mechanism: a test points `DB` at an empty temporary directory, asserts that a read-only connect raises (reproducing the deployed failure), then asserts `ensure_ready` builds it, that the marts verify, and that a second call rebuilds nothing. A second test asserts the committed demo runs are not gitignored, since the public link has nothing to replay if they are.
+
+
+### Decision: a period can be loaded from CSV, and it updates everything or is refused
+- Context: the dataset was fixed at 24 months. Hard-coded data reads as a toy, and the question an interviewer actually has -- "what happens when next month closes?" -- had no answer.
+- The hard part was not parsing. The app has TWO data paths: the main pages generate their tables in memory from a scenario and never read the CSVs, while the agent reads marts built from the CSVs on disk. A period that reached one and not the other would be worse than no upload at all, because the tool would look like it worked. So the merge happens once, above every page, and the CSVs are rewritten and the marts rebuilt in the same action.
+- Validation is the feature, not the packaging around it. A blind append would let an unknown department, a duplicate period, or text in an amount column through, and every downstream guarantee -- the audit, the traced figures, the reconciled bridges -- would be resting on data nobody checked. Refusals name the table, the reason, and the row.
+- Refused: a period that already exists (an upload adds a period, it may never modify a closed month), an unknown department or account, a non-numeric amount, a malformed month, duplicate keys, a missing column, two files of the same table, and a period earlier than the dataset. Accepted: `$` and accounting parentheses, because that is what a finance export writes.
+- **The subtlest problem was classification.** Actuals, budget and forecast share ONE schema exactly, as do SaaS metrics, its budget and its forecast. Columns cannot tell them apart, so the filename decides -- and a filename that says nothing is refused rather than defaulted. Defaulting would mean budget rows silently becoming actuals: total, invisible corruption of every variance in the tool.
+- Missing optional files warn with the CONSEQUENCE rather than the fact. "No SaaS metrics budget" means nothing to a reader; "the revenue volume-versus-price split will be unavailable, and the agent will refuse to produce a complete package" is actionable. That warning came from watching the agent correctly refuse a period uploaded without it.
+- Shaped like the publication gate: parse, validate, PREVIEW exactly what will change, approve, merge. Nothing lands until someone has seen what lands.
+- The upload control states the synthetic-data rule at the control itself. An upload box on a public link, operated by someone holding a clearance, needs the rule where the hand is, not in a README.
+
+### Decision: Evidence replaces three tabs
+- Context: eight tabs is more than anyone gives a tool in ten minutes, and two of them -- "ROI" and "Guardrails & Eval" -- were named for what they contain rather than for the question a reader is asking.
+- Choice & why: "Decision log" is deleted from the UI and stays in the repo, where "it is all documented, here is the file" is the stronger answer; nobody reads seventy entries of engineering prose on a screen. ROI and the eval merge into **Evidence**, behind the same mode selector the agent uses, with the questions as the labels: *Time saved* and *Proof it doesn't fabricate*. Six tabs.
+- The eval was nearly deleted outright, which would have been a mistake: it is the only place the "shown not to fabricate" requirement is actually shown, and a claim an interviewer can click is worth more than one they have to take on trust.
+
+### Note: three modules define the same paths
+Testing the CSV round trip meant redirecting the data directory, and it turned out `agent.materialize`, `build_database` and `run_pipeline` each define `SYN` and `DB` independently. Patching two of the three produced an empty database and a failure unrelated to what was being tested.
+
+The test now snapshots the committed CSVs, exercises the REAL write path, and restores -- which is the honest version, since the thing under test is the production write and not a redirected imitation of it. The duplicated constants are worth consolidating, and are logged here rather than fixed under a feature.
+
+
+### Decision: the answer to "what should the file look like" is a file
+- Context: the upload panel described the required schema in prose. Describing a schema and letting someone build a file from the description is how uploads fail on the first attempt.
+- Choice & why: a downloadable Excel template with one sheet per table, an example row in every sheet showing the exact format rather than describing it, a reference sheet listing every valid department and account code, and an instruction sheet. A reader copies a row far more reliably than they interpret a specification.
+- **The sheet names solve a problem filenames could not.** Actuals, budget and forecast share one schema EXACTLY, as do SaaS metrics, its budget and its forecast -- so a loose CSV called "close final.csv" cannot be placed, and the tool has to refuse it. A sheet named `fact_budget` always can. The workbook is therefore the recommended path, and loose CSVs remain supported for anyone who prefers them.
+- The header row is LOCATED rather than assumed. The template carries a purpose line and a REQUIRED marker above its headers, and a hand-made sheet may have a title row or none; reading row 1 as the header turns the description into a column name and the sheet is rejected for having the wrong columns.
+
+### Note: the example row was silently becoming data
+The first template uploaded cleanly while completely untouched -- the illustration loaded as a real period containing one invented row. An example that can be mistaken for data is worse than no example.
+
+The row is now tagged in a marker column that sits outside every schema, so it is stripped on upload and an unfilled template is refused with the reason: "the template has not been filled in - every sheet contains only the example row."
+
+Two smaller versions of the same mistake surfaced in the same pass. The "EXAMPLE ABOVE - delete row 5" note originally sat in column A, under `month`, where it survived stripping and was reported as a malformed date -- a refusal caused by the instructions rather than the data. And the blank row it left behind was only all-empty AFTER the marker column was dropped, so the emptiness check had to run again afterwards. Each was found by uploading the template rather than by reading the code.
+
+### Note: a template that loses its instructions when printed
+The instruction column was present in every cell and invisible in the rendered page -- LibreOffice paginated it sideways onto a sheet of its own. Fixed with fit-to-width on every sheet. Found by rendering the workbook and looking at it, which is the same check that caught the unreadable ARR chart on the deck: correct content, useless presentation, and no test would have failed.
+
+
+### Decision: an uploaded period lives in a session database, never in the committed CSVs
+- Context: `write_tables` wrote the merged tables back over `data/synthetic` and rebuilt from there, on the reasoning that the CSVs are the source of truth so writing them is the same path a fresh checkout takes.
+- Why that was wrong: an upload is SESSION state -- provisional, discardable, scoped to one visitor -- while the CSVs are the committed dataset the entire project rests on. Loading a period silently rewrote the repository's source data. "Remove uploaded periods" cleared the session and could not put the CSVs back, so every later run saw a dataset nobody had committed.
+- How it surfaced: `fact_actuals` went from 624 rows to 650 and twenty-eight tests failed on the changed counts -- the golden package digest, the committed replay artifacts, the salary-ties-to-headcount validation, the canonical-dataset check. Every one of those was a mechanism doing exactly its job. Without them the tool would have kept working while the repository quietly held data that was never committed, and the first sign would have been a stranger cloning it and getting different numbers.
+- Choice & why: base tables are written straight from the DataFrames into a separate `session.duckdb`, and `connect_readonly` prefers it when it exists. One line at one call site, so every tool, the agent and every deliverable see uploaded periods without any of them knowing a session exists. The CSV path is never touched, `git status` stays clean, and discarding an upload is deleting one file.
+- `clear_session()` is called by the Remove button, because clearing the session state without the session database would leave the agent serving periods every other page had just forgotten.
+- Pinned by a test that fingerprints every committed CSV before and after an upload and fails on any change.
+
+### Note: the tests leaked the state they created
+Four unrelated suites failed after the fix, all for the same reason: a test called `write_tables`, which now leaves a session database behind, and the restore fixture knew nothing about it. Every test after it saw the uploaded periods, because `connect_readonly` prefers a session when one exists.
+
+A fixture that restores "the dataset" has to restore everything that counts as the dataset, and the definition changed when the session database was added. The fixture now clears it, and the cold-start test redirects `SESSION_DB` as well as `DB` so a leaked session cannot make a cold start look warm.
+
+
+### Decision: departments read as names everywhere, not warehouse codes
+- Context: the department rollup and the driver table showed CORP, RND and SM -- the warehouse's identifiers, not names a reader outside the project would recognise.
+- Why it was inconsistent: the agent's SQL tools already join `dim_department` for exactly this reason, so the same department appeared as "Research & Development" on the agent page and "RND" on the variance page. A reader has no way to know those are the same thing.
+- Choice & why: one `dept_name()` lookup, built from `dim_department` AFTER any uploaded periods are merged so a department introduced by an upload resolves too, used at every display site rather than patching the one table that was noticed. It falls back to the code rather than blanking, because an unrecognised department is still information.
+- The rollup is also sorted by name now: alphabetical by code put Corporate first by accident of spelling, which read as a ranking it was not.
+
+
+### Decision: ROI prices the close cycle, not just the commentary
+- Context: the ROI page priced ONE artifact -- the narrative -- because that was all the tool produced when it was written. The agent now produces eight per close and reloads the whole dataset from an upload.
+- Choice & why: a second, separately-priced block covering the two buckets an analyst would actually name -- assembling the period, and building the deliverables. Kept separate from the commentary figure rather than merged, because adding them would double-count the narrative that appears inside the memo, and a headline that quietly counts the same work twice is exactly the unverifiable number this project exists to avoid.
+- Framed against the survey evidence rather than asserting a benchmark of its own: AFP/APQC found 25% of FP&A time on value-added analysis against 42% gathering data; FP&A Trends 2025 put 46% on collection and validation; Prophix found 51%. Those are cited as CONTEXT for why the bucket matters, never as this tool's own result.
+- The tool side is modelled as REVIEW time, not zero. The artifacts are produced in well under a second, and what a person actually spends is reading them and signing off. A model showing the tool costing nothing would be the one fabricated figure on a page whose headline is zero fabricated figures.
+- Every assumption is a slider, so an interviewer can dispute the baseline and watch the answer move -- which is a stronger position than a fixed number they can only disbelieve. Central case: 7.4 hours by hand against 42 minutes of review, 81 hours a year; the conservative case is still 45 hours.
+- Saving scales with departments, because packets are per budget owner. A claim that grows with the organisation is more defensible than a flat one.
+
+
+### Decision: the README is written for someone deciding whether to keep reading
+- Context: the README described the copilot only, in phase order -- "Phase 1 complete, Phase 2 complete" -- which is the shape of a build log rather than of an introduction. It stopped before the agent, the deliverables and the upload existed.
+- Choice & why: reorganised around what the tool DOES rather than the order it was built in, with a live-demo link at the top, because the first question a reader has is "can I see it" and the second is "what does it do". The compute-then-explain diagram is kept verbatim: it is the one idea, and it explains the whole architecture in nine lines.
+- A **What an interviewer can check** section states the reproducible claims -- the 40-case adversarial eval, the measured tolerance with its false-verify rates at each precision, the artifact traceability, `verify_decks.py`, 526 tests -- because a claim someone can run is worth more than one they have to accept.
+- A **What it does not do** section states the limits plainly: no recommendations, no model-computed figures, synthetic data only, aggregate rather than cohort retention, and no production users. Omitting those would make every other claim less credible, and they are the questions an interviewer asks anyway.
+- The one-page PDF case study was dropped. It would have duplicated this document in a format nobody asks for when the repository is one click away.
+
+### Note: the README asserted paths that did not exist
+Writing it surfaced that `validate_data.py` lives in `src/validation/`, not `src/`, and that the deck is twelve slides rather than eleven. Both were written from memory of the project rather than from the project.
+
+Every command in the Run-it block was then executed and every referenced file checked to exist, which is the same standard the tool applies to its own figures. A README that overstates is the one unverified artifact in a repository whose entire argument is that nothing goes unverified.

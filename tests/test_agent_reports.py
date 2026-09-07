@@ -625,6 +625,10 @@ def test_the_agent_builds_its_own_marts_on_a_cold_start(tmp_path, monkeypatch):
 
     fresh = tmp_path / "processed" / "fpa.duckdb"
     monkeypatch.setattr(agent_mz, "DB", str(fresh))
+    # connect_readonly prefers a session database when one exists, so a leaked
+    # session from another test would make the cold start look warm.
+    monkeypatch.setattr(agent_mz, "SESSION_DB",
+                        str(tmp_path / "processed" / "session.duckdb"))
     assert not fresh.exists()
 
     # Read-only cannot create the database -- this is the deployed failure.

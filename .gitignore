@@ -6,3 +6,6 @@ data/processed/*.duckdb
 .venv/
 venv/
 .DS_Store
+
+# generated demo upload files
+upload-sample/

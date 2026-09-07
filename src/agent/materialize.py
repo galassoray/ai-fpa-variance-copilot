@@ -311,6 +311,97 @@ def materialize(outputs: dict | None = None, verbose: bool = True) -> str:
     return h
 
 
+#: A session database, built from uploaded periods and holding the same base
+#: tables and marts as the committed one. It exists so that loading a period
+#: never touches ``data/synthetic``.
+SESSION_DB = os.path.join(SRC, "..", "data", "processed", "session.duckdb")
+
+
+def write_tables(tables: dict, verbose: bool = False) -> str:
+    """Build a SESSION database from an in-memory table set.
+
+    WHY THIS DOES NOT WRITE THE CSVs ANY MORE
+    -----------------------------------------
+    The first version wrote the merged tables back over ``data/synthetic`` and
+    rebuilt from there, reasoning that the CSVs are the source of truth so
+    writing them is the same path a fresh checkout takes.
+
+    That was wrong in a way that took a while to surface. An upload is SESSION
+    state -- provisional, discardable, scoped to one visitor -- while the CSVs
+    are the committed dataset the whole project rests on. Loading a period
+    silently rewrote the repository source data; "Remove uploaded periods"
+    cleared the session but could not put the CSVs back; and every later run
+    saw a dataset nobody had committed. Twenty-eight tests failed on the
+    changed row counts, which is the only reason it surfaced at all.
+
+    Base tables are now written straight from the DataFrames into a separate
+    database file. Nothing on the CSV path is touched, ``git status`` stays
+    clean, and discarding an upload is deleting one file.
+    """
+    import run_pipeline as rp
+
+    outputs = rp.compute(tables)
+    missing = set(MART_TABLES) - set(outputs)
+    if missing:
+        raise KeyError("computation layer did not produce expected outputs: "
+                       + str(sorted(missing)))
+
+    os.makedirs(os.path.dirname(SESSION_DB), exist_ok=True)
+    if os.path.exists(SESSION_DB):
+        os.remove(SESSION_DB)
+
+    con = duckdb.connect(SESSION_DB)
+    try:
+        for name, df in tables.items():
+            out = df.copy()
+            if "month" in out.columns:
+                out["month"] = out["month"].astype(str).str.slice(0, 10)
+            con.register("_df", out)
+            con.execute(f"CREATE OR REPLACE TABLE {name} AS SELECT * FROM _df")
+            con.unregister("_df")
+
+        for key, table in MART_TABLES.items():
+            df = outputs[key].copy()
+            if "month" in df.columns:
+                df["month"] = df["month"].astype(str)
+            con.register("_df", df)
+            con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM _df")
+            con.unregister("_df")
+            if verbose:
+                print(f"session {table:34s} rows={len(df)}")
+
+        h = build_hash()
+        con.execute(f"CREATE OR REPLACE TABLE {META_TABLE} "
+                    "(build_hash VARCHAR, built_at_utc TIMESTAMP, "
+                    "n_tables INTEGER)")
+        con.execute(f"INSERT INTO {META_TABLE} VALUES (?, ?, ?)",
+                    [h, datetime.now(timezone.utc).replace(tzinfo=None),
+                     len(MART_TABLES)])
+        con.execute(f"CREATE OR REPLACE TABLE {SOURCE_META} "
+                    "(csv_fingerprint VARCHAR, recorded_at_utc TIMESTAMP)")
+        con.execute(f"INSERT INTO {SOURCE_META} VALUES (?, ?)",
+                    [csv_fingerprint(),
+                     datetime.now(timezone.utc).replace(tzinfo=None)])
+    finally:
+        con.close()
+
+    if verbose:
+        print(f"session database -> {SESSION_DB}")
+    return h
+
+
+def clear_session() -> bool:
+    """Discard uploaded periods. Returns True if a session database existed."""
+    if os.path.exists(SESSION_DB):
+        os.remove(SESSION_DB)
+        return True
+    return False
+
+
+def has_session() -> bool:
+    return os.path.exists(SESSION_DB)
+
+
 def ensure_ready(verbose: bool = False) -> str:
     """Build the database and marts if they are absent or stale.
 
@@ -355,7 +446,12 @@ def connect_readonly() -> "duckdb.DuckDBPyConnection":
     flag is the local stand-in and the security property is identical from the
     agent's side -- there is no code path through which it can write.
     """
-    return duckdb.connect(DB, read_only=True)
+    # A session database, when one exists, holds the committed data PLUS any
+    # period uploaded this session. Preferring it here means every tool, the
+    # agent and the deliverables see uploaded periods without a single call
+    # site needing to know a session exists.
+    path = SESSION_DB if os.path.exists(SESSION_DB) else DB
+    return duckdb.connect(path, read_only=True)
 
 
 if __name__ == "__main__":

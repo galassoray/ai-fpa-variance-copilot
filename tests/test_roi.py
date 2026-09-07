@@ -140,3 +140,69 @@ def test_annualisation_is_explicit_not_baked_in(measured):
     assert r.annual_hours(monthly) == pytest.approx(r.annual_hours(quarterly) * 3)
     multi = ROI.Baseline(closes_per_year=12, commentaries_per_close=5)
     assert r.annual_hours(multi) == pytest.approx(r.annual_hours(monthly) * 5)
+
+
+# --------------------------------------------------------------------------
+# the close-cycle deliverables
+# --------------------------------------------------------------------------
+def test_deliverable_roi_prices_every_artifact():
+    """The commentary ROI prices ONE artifact. The agent produces eight, and
+    the volume is what an analyst would actually name."""
+    import roi
+
+    base = roi.DeliverableBaseline(departments=5)
+    r = roi.deliverable_roi(base)
+
+    assert r.artifacts == 8, "3 documents + one packet per department"
+    assert r.by_hand_minutes > r.with_tool_minutes
+    assert 0.5 < r.pct_reduction < 1.0
+    assert set(r.breakdown) == {"by_hand", "with_tool"}
+    assert len(r.breakdown["by_hand"]) == len(r.breakdown["with_tool"])
+
+
+def test_the_tool_is_not_modelled_as_free():
+    """Claiming zero cost would be the one unverifiable number on the page.
+    What a person spends is reading the artifacts and signing off."""
+    import roi
+
+    r = roi.deliverable_roi(roi.DeliverableBaseline())
+    assert r.with_tool_minutes > 0
+    assert all(v > 0 for v in r.breakdown["with_tool"].values())
+
+
+def test_deliverable_cost_scales_with_departments():
+    """Packets are per budget owner, so the saving grows with the org rather
+    than being a fixed claim."""
+    import roi
+
+    small = roi.deliverable_roi(roi.DeliverableBaseline(departments=3))
+    large = roi.deliverable_roi(roi.DeliverableBaseline(departments=12))
+    assert large.by_hand_minutes > small.by_hand_minutes
+    assert large.artifacts == 15 and small.artifacts == 6
+
+
+def test_sensitivity_spans_the_assumption_not_the_measurement():
+    """Three scenarios rather than one number: a point estimate invites an
+    argument about the point instead of about the shape."""
+    import roi
+
+    rows = roi.deliverable_sensitivity(roi.DeliverableBaseline())
+    assert len(rows) == 3
+    hands = [r["By hand (min)"] for r in rows]
+    assert hands == sorted(hands), "scenarios should ascend"
+    # The tool side is a review cost and does not move with the assumption.
+    assert len({r["With tool (min)"] for r in rows}) == 1
+
+
+def test_every_deliverable_assumption_is_adjustable():
+    """Each one is an assumption, and the page must let an interviewer move it
+    rather than take it on trust."""
+    import dataclasses
+
+    import roi
+
+    fields = {f.name for f in dataclasses.fields(roi.DeliverableBaseline)}
+    for expected in ("deck_minutes", "flash_minutes", "memo_minutes",
+                     "packet_minutes", "assembly_minutes",
+                     "review_minutes_per_artifact"):
+        assert expected in fields

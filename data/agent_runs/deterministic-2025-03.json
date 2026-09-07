@@ -1,9 +1,9 @@
 {
   "format_version": 2,
-  "saved_at_utc": "2026-08-24T02:31:49.196030+00:00",
+  "saved_at_utc": "2026-09-04T16:57:03.167355+00:00",
   "label": "deterministic-2025-03",
   "ledger": {
-    "run_id": "28d9a268e6a0",
+    "run_id": "96bfb9fa6a5a",
     "goal": {
       "period": "2025-03-01",
       "comparison": "actual_vs_budget",
@@ -21,16 +21,16 @@
       "max_replans_per_step": 2,
       "max_replans_per_run": 4
     },
-    "started_at": "2026-08-24T02:31:49.120862+00:00",
+    "started_at": "2026-09-04T16:57:03.112250+00:00",
     "outcome": "COMPLETED",
     "refusal_reason": "",
     "notes": [],
     "planning": {},
     "cost": {
       "steps": 14,
-      "wall_clock_s": 0.072,
+      "wall_clock_s": 0.051,
       "planning_latency_ms": 0.0,
-      "tool_latency_ms": 69.7,
+      "tool_latency_ms": 49.77,
       "tokens_in": 0,
       "tokens_out": 0,
       "cost_usd": 0.0,
@@ -49,12 +49,12 @@
         "result_hash": "b440b4edda3ed655",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 5.923799937590957,
+        "latency_ms": 7.352099753916264,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.126864+00:00"
+        "timestamp": "2026-09-04T16:57:03.119647+00:00"
       },
       {
         "step_idx": 2,
@@ -70,12 +70,12 @@
         "result_hash": "cec6fdce54d58218",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 4.4328998774290085,
+        "latency_ms": 2.506200224161148,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.131494+00:00"
+        "timestamp": "2026-09-04T16:57:03.122289+00:00"
       },
       {
         "step_idx": 3,
@@ -93,12 +93,12 @@
         "result_hash": "1dabc70d5a4b40fe",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 5.591499852016568,
+        "latency_ms": 3.6235000006854534,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.137265+00:00"
+        "timestamp": "2026-09-04T16:57:03.125995+00:00"
       },
       {
         "step_idx": 4,
@@ -120,12 +120,12 @@
         "result_hash": "cae5dc19db5d6e7f",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 12.536599999293685,
+        "latency_ms": 4.524699877947569,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.149946+00:00"
+        "timestamp": "2026-09-04T16:57:03.130613+00:00"
       },
       {
         "step_idx": 5,
@@ -147,12 +147,12 @@
         "result_hash": "f38b861415c47126",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 8.140199817717075,
+        "latency_ms": 6.726300343871117,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.158375+00:00"
+        "timestamp": "2026-09-04T16:57:03.137453+00:00"
       },
       {
         "step_idx": 6,
@@ -174,12 +174,12 @@
         "result_hash": "f0be0a40a2eb6718",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 5.370700033381581,
+        "latency_ms": 4.722200334072113,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.163922+00:00"
+        "timestamp": "2026-09-04T16:57:03.142319+00:00"
       },
       {
         "step_idx": 7,
@@ -201,12 +201,12 @@
         "result_hash": "972f5238cbf5241d",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 7.244799984619021,
+        "latency_ms": 3.8663996383547783,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.171380+00:00"
+        "timestamp": "2026-09-04T16:57:03.146296+00:00"
       },
       {
         "step_idx": 8,
@@ -228,12 +228,12 @@
         "result_hash": "5f4821b2ef234c4d",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 4.908799892291427,
+        "latency_ms": 4.957200028002262,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.176455+00:00"
+        "timestamp": "2026-09-04T16:57:03.151369+00:00"
       },
       {
         "step_idx": 9,
@@ -255,12 +255,12 @@
         "result_hash": "1caf25c122658719",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 5.232499912381172,
+        "latency_ms": 4.813999868929386,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.181817+00:00"
+        "timestamp": "2026-09-04T16:57:03.156330+00:00"
       },
       {
         "step_idx": 10,
@@ -277,12 +277,12 @@
         "result_hash": "d1e1177652a31911",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 3.162599867209792,
+        "latency_ms": 2.0374003797769547,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.185111+00:00"
+        "timestamp": "2026-09-04T16:57:03.158476+00:00"
       },
       {
         "step_idx": 11,
@@ -298,12 +298,12 @@
         "result_hash": "c273f3f3a4d864bb",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 0.9907998610287905,
+        "latency_ms": 0.7518003694713116,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.186212+00:00"
+        "timestamp": "2026-09-04T16:57:03.159309+00:00"
       },
       {
         "step_idx": 12,
@@ -319,12 +319,12 @@
         "result_hash": "48c3adba02e3260a",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 1.2274000328034163,
+        "latency_ms": 0.9567998349666595,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.187515+00:00"
+        "timestamp": "2026-09-04T16:57:03.160323+00:00"
       },
       {
         "step_idx": 13,
@@ -341,12 +341,12 @@
         "result_hash": "cec32f44e9d09dcc",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 2.352700103074312,
+        "latency_ms": 1.6246000304818153,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.189956+00:00"
+        "timestamp": "2026-09-04T16:57:03.162026+00:00"
       },
       {
         "step_idx": 14,
@@ -366,12 +366,12 @@
         "result_hash": "0cc88df1983f7f6c",
         "error": "",
         "valid_alternatives": [],
-        "latency_ms": 2.5829998776316643,
+        "latency_ms": 1.310999970883131,
         "tokens_in": 0,
         "tokens_out": 0,
         "cost_usd": 0.0,
         "replanned": false,
-        "timestamp": "2026-08-24T02:31:49.192646+00:00"
+        "timestamp": "2026-09-04T16:57:03.163412+00:00"
       }
     ],
     "results": {
@@ -2199,7 +2199,7 @@
     "reason": ""
   },
   "gates": {
-    "run_id": "28d9a268e6a0",
+    "run_id": "96bfb9fa6a5a",
     "artifact_hash": "50e080091f0e70ca",
     "audit_ok": true,
     "published": true,
@@ -2207,7 +2207,7 @@
       "decision": "APPROVED",
       "reviewer": "deterministic build",
       "note": "hand-written canonical plan",
-      "timestamp": "2026-08-24T02:31:49.116567+00:00",
+      "timestamp": "2026-09-04T16:57:03.108775+00:00",
       "plan_summary": [
         {
           "step": 1,
@@ -2413,7 +2413,7 @@
       "decision": "APPROVED",
       "approver": "deterministic build",
       "note": "canonical plan, deterministic narrative, audit clean",
-      "timestamp": "2026-08-24T02:31:49.195293+00:00",
+      "timestamp": "2026-09-04T16:57:03.166489+00:00",
       "artifact_hash": "50e080091f0e70ca"
     }
   }

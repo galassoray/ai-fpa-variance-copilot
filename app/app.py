@@ -98,6 +98,29 @@ def eval_results():
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+def dept_name(code, fallback=True):
+    """Full department name for a code.
+
+    The tables showed raw codes -- CORP, RND, SM -- which are the warehouse's
+    identifiers, not names a reader outside the project would recognise. The
+    agent's SQL tools already join dim_department for exactly this reason; the
+    flagship pages read the computed frames directly and had no equivalent, so
+    the same department appeared as "Research & Development" on one tab and
+    "RND" on another.
+
+    Falls back to the code rather than blanking, because an unrecognised
+    department is still information.
+    """
+    try:
+        lookup = DEPT_NAMES
+    except NameError:
+        return str(code)
+    name = lookup.get(str(code))
+    if name:
+        return name
+    return str(code) if fallback else ""
+
+
 def money(x, na_str="n/a", parens=True):
     """Display-only currency formatter, accounting convention.
 
@@ -287,17 +310,184 @@ with st.sidebar:
     st.caption("Code computes every number. The model only explains.")
 
     page = st.radio("View", ["Overview", "Variance", "Forecast", "Commentary",
-                             "Close-cycle agent",
-                             "Guardrails & Eval", "ROI", "Decision log"],
+                             "Close-cycle agent", "Evidence"],
                     label_visibility="collapsed")
     SC = scenario_sidebar()
 
+# The dataset is the generated scenario PLUS any period uploaded and approved
+# this session. Merged here rather than inside a page, because a period that
+# appeared on one tab and not another would be worse than not supporting
+# uploads at all.
 TABLES, OUTPUTS, NAMES, MONTHS, INDEX = bootstrap(SC.key())
+_uploaded = st.session_state.get("uploaded_tables")
+if _uploaded:
+    TABLES = _uploaded
+    OUTPUTS = rp.compute(TABLES)
+    NAMES = ea.canonical_entity_names(TABLES)
+    MONTHS = sorted(OUTPUTS["variance_detail"]["month"].unique())
+    INDEX = FI.build_fact_index(OUTPUTS, TABLES)
+
+#: Built after any uploaded periods are merged, so a department introduced by
+#: an upload resolves too.
+DEPT_NAMES = dict(zip(TABLES["dim_department"]["department_id"].astype(str),
+                      TABLES["dim_department"]["department_name"].astype(str)))
+
+def _upload_panel():
+    """Load a new period from CSVs: validate, preview, approve, rebuild.
+
+    Deliberately shaped like the publication gate. Nothing lands until someone
+    has seen exactly what would land -- which periods, how many rows, which
+    departments, and what is missing along with what that costs.
+    """
+    from agent.ingest import merge, parse_upload, summarise
+
+    st.markdown("<div class='eyebrow'>Load a period</div>",
+                unsafe_allow_html=True)
+    st.markdown(
+        "<div class='small'>Upload the month's CSVs and the whole tool updates: "
+        "the reporting month list, every table, the company aggregates, and the "
+        "agent. <b>Synthetic or public data only</b> \u2014 never anything from "
+        "an employer.</div>", unsafe_allow_html=True)
+
+    # Periods accumulate. The first version returned here once anything was
+    # loaded, which capped a session at one month for no reason other than
+    # simpler state -- and a close cycle is a sequence, so loading January and
+    # then February is the ordinary case, not an edge one.
+    loaded = st.session_state.get("uploaded_periods") or []
+    if loaded:
+        st.success("Loaded this session: "
+                   + ", ".join(month_label(m) for m in loaded))
+        if st.button("Remove uploaded periods"):
+            for k in ("uploaded_tables", "uploaded_periods", "upload_preview"):
+                st.session_state.pop(k, None)
+            # Discarding must remove the SESSION DATABASE too, or the agent
+            # keeps serving periods every other page has just forgotten.
+            try:
+                from agent import materialize as agent_mz
+
+                agent_mz.clear_session()
+            except Exception:  # noqa: BLE001
+                pass
+            st.cache_resource.clear()
+            st.rerun()
+        st.markdown("<div class='small'>Upload the next month below \u2014 each "
+                    "one builds on the periods already loaded.</div>",
+                    unsafe_allow_html=True)
+
+    files = st.file_uploader(
+        "Excel workbook or CSV files", type=["xlsx", "xlsm", "csv"],
+        accept_multiple_files=True,
+        # Keyed on what is already loaded so the control empties after each
+        # successful load; otherwise the previous month's file stays attached
+        # and looks like it is about to be uploaded twice.
+        key=f"upload_files_{len(loaded)}",
+        help="Upload the filled template, or loose CSVs. In a workbook the "
+             "SHEET names identify the tables; with loose CSVs the filename "
+             "has to, because actuals and budget share a schema.")
+
+    if files and st.button("Check these files", type="primary"):
+        payload = [(f.name, f.getvalue()) for f in files]
+        st.session_state["upload_preview"] = parse_upload(payload, TABLES)
+        st.rerun()
+
+    preview = st.session_state.get("upload_preview")
+    if preview is None:
+        with st.expander("What the files need to contain"):
+            # The template is the answer to this question. Describing a schema
+            # in prose and letting someone build a file from the description is
+            # how uploads fail; handing them the exact shape, with a filled
+            # example row and the valid codes on a reference sheet, is how they
+            # succeed on the first try.
+            st.markdown(
+                "<div style='color:#0F172A;font-size:0.9rem;line-height:1.45'>"
+                "<b>Start from the template.</b> It has one sheet per table, "
+                "named so the tool knows which is which, an example row in "
+                "every sheet showing the exact format, and a reference sheet "
+                "listing every valid department and account code. Fill it in "
+                "and upload the whole workbook.</div>",
+                unsafe_allow_html=True)
+            try:
+                from agent.ingest import build_template
+
+                st.download_button(
+                    "Download the Excel template",
+                    data=build_template(TABLES),
+                    file_name="load-a-period-template.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument."
+                         "spreadsheetml.sheet",
+                    type="primary", key="upload_template")
+            except Exception as e:  # noqa: BLE001
+                st.caption(f"Template unavailable: {type(e).__name__}: {e}")
+
+            st.markdown("<div class='small'>Or build the files yourself:</div>",
+                        unsafe_allow_html=True)
+            st.markdown(
+                "- **actuals** and **budget**: `month, department_id, "
+                "account_id, amount`\n"
+                "- **headcount**: `month, department_id, actual_headcount, "
+                "budget_headcount, ...`\n"
+                "- **SaaS metrics**: `month, starting_arr, new_arr, ...`\n\n"
+                "Months as `YYYY-MM`. Amounts may use `$` and accounting "
+                "parentheses. Departments and accounts must already exist \u2014 "
+                "an upload adds a period, never a new account.")
+        return
+
+    for f in preview.errors:
+        detail = f" (rows {', '.join(str(r) for r in f.rows)})" if f.rows else ""
+        st.error(f"**{f.table}** \u2014 {f.message}{detail}")
+    for f in preview.warnings:
+        st.warning(f"**{f.table}** \u2014 {f.message}")
+
+    if not preview.acceptable:
+        st.caption("Nothing was loaded. Fix the file and check again.")
+        if st.button("Start over"):
+            st.session_state.pop("upload_preview", None)
+            st.rerun()
+        return
+
+    st.markdown("<div class='eyebrow'>What this will add</div>",
+                unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame(
+        [{"Table": t.replace("fact_", ""), "Rows": n}
+         for t, n in sorted(preview.row_counts.items())]),
+        hide_index=True, width="stretch")
+    st.markdown(
+        f"<div class='small'>Adding <b>"
+        f"{', '.join(month_label(m) for m in preview.new_periods)}</b> \u00b7 "
+        f"{len(preview.departments)} department(s) \u00b7 no existing period "
+        f"is modified.</div>", unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    if c1.button("Load this period", type="primary"):
+        merged = merge(TABLES, preview)
+        st.session_state["uploaded_tables"] = merged
+        st.session_state["uploaded_periods"] = sorted(
+            set(loaded) | set(preview.new_periods))
+        st.session_state.pop("upload_preview", None)
+        # The agent reads marts built from CSVs on disk, so the merged tables
+        # are written out and the marts rebuilt -- otherwise the new period
+        # would appear on every page except the agent's.
+        try:
+            from agent import materialize as agent_mz
+            agent_mz.write_tables(merged)
+            st.cache_resource.clear()
+        except Exception as e:  # noqa: BLE001
+            st.warning(f"Loaded, but the agent's data could not be rebuilt: "
+                       f"{type(e).__name__}: {e}")
+        st.rerun()
+    if c2.button("Discard"):
+        st.session_state.pop("upload_preview", None)
+        st.rerun()
+
 
 with st.sidebar:
     default_ix = MONTHS.index("2025-09-01") if "2025-09-01" in MONTHS else len(MONTHS) - 1
     sel_month = st.selectbox("Reporting month", MONTHS, index=default_ix,
                              format_func=month_label)
+    st.markdown("---")
+    with st.expander("Load a new period from CSV"):
+        _upload_panel()
+
     st.markdown("---")
     st.caption("100% synthetic data. No real-company information.")
     a_ok, o_ok = bool(get_key("Anthropic")), bool(get_key("OpenAI"))
@@ -394,7 +584,8 @@ def page_variance():
                "read off OI impact, not the raw variance.")
 
     disp = drivers.copy()
-    disp["Line item"] = disp["account_name"] + " (" + disp["department_id"] + ")"
+    disp["Line item"] = (disp["account_name"] + " ("
+                         + disp["department_id"].map(dept_name) + ")")
     disp["Actual"] = disp["actual"].map(money)
     disp["Budget"] = disp["budget"].map(money)
     disp["Variance (act − bud)"] = disp["var_ab_amount"].map(
@@ -435,9 +626,10 @@ def page_variance():
         bdm = bd[bd["month"] == sel_month].copy()
         for c in ["actual", "budget", "var_ab_amount"]:
             bdm[c.title()] = bdm[c].map(money)
-        st.dataframe(bdm[["department_id", "Actual", "Budget", "Var_Ab_Amount"]]
-                     .rename(columns={"department_id": "Department",
-                                      "Var_Ab_Amount": "Variance"}),
+        bdm["Department"] = bdm["department_id"].map(dept_name)
+        st.dataframe(bdm[["Department", "Actual", "Budget", "Var_Ab_Amount"]]
+                     .rename(columns={"Var_Ab_Amount": "Variance"})
+                     .sort_values("Department"),
                      hide_index=True, width='stretch')
 
 
@@ -746,8 +938,89 @@ def page_roi():
 
     m = ROI.measure(OUTPUTS, TABLES)
 
-    st.markdown("<div class='eyebrow'>Measured &middot; instrumented from this "
-                "run</div>", unsafe_allow_html=True)
+    # ---- the close cycle, priced -------------------------------------
+    # The commentary section below prices ONE artifact. The agent now produces
+    # eight and reloads the whole dataset from an upload, and those are the two
+    # buckets an analyst would actually name: assembling the data, and building
+    # the deliverables.
+    st.markdown("<div class='eyebrow'>The close cycle &middot; what the tool "
+                "replaces</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='color:#0F172A;font-size:0.92rem;line-height:1.5'>"
+        "Surveys of FP&amp;A teams put <b>42\u201351% of the week on gathering "
+        "and validating data</b> rather than analysing it, a split that has "
+        "barely moved in a decade. The two buckets below are the ones that "
+        "describes: loading a period, and building the artifacts that come out "
+        "of it. Adjust the assumptions \u2014 they are assumptions.</div>",
+        unsafe_allow_html=True)
+
+    with st.expander("Assumptions \u2014 minutes to do each by hand"):
+        g1, g2 = st.columns(2)
+        with g1:
+            a_assembly = st.slider("Assemble and load the period (min)",
+                                   30, 480, 150, 10)
+            a_deck = st.slider("Board deck (min)", 20, 240, 95, 5)
+            a_memo = st.slider("Monthly variance memo (min)", 15, 240, 70, 5)
+        with g2:
+            a_flash = st.slider("Flash report (min)", 5, 90, 20, 5)
+            a_packet = st.slider("Each budget-owner packet (min)", 5, 90, 22, 1)
+            a_review = st.slider("Reviewing each generated artifact (min)",
+                                 0, 30, 4, 1)
+        st.caption("Review time is deliberately not zero. The artifacts are "
+                   "produced in well under a second; what a person actually "
+                   "spends is reading them and signing off, and a model "
+                   "showing the tool costing nothing would be the one "
+                   "unverifiable number on this page.")
+
+    n_depts = len(TABLES["dim_department"])
+    dbase = ROI.DeliverableBaseline(
+        deck_minutes=a_deck, flash_minutes=a_flash, memo_minutes=a_memo,
+        packet_minutes=a_packet, assembly_minutes=a_assembly,
+        departments=n_depts, loaded_cost_per_hour=85.0,
+        review_minutes_per_artifact=a_review)
+    dr = ROI.deliverable_roi(dbase)
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Artifacts per close", f"{dr.artifacts}",
+              f"{n_depts} departments", delta_color="off")
+    k2.metric("By hand", f"{dr.by_hand_minutes / 60:.1f} hrs",
+              "assemble + build", delta_color="off")
+    k3.metric("With the tool", f"{dr.with_tool_minutes:.0f} min",
+              "review and sign off", delta_color="off")
+    k4.metric("Redeployed", f"{dr.annual_hours():.0f} hrs/yr",
+              f"{dr.pct_reduction * 100:.0f}% reduction", delta_color="off")
+
+    b_left, b_right = st.columns(2)
+    with b_left:
+        st.markdown("<div class='eyebrow'>By hand</div>",
+                    unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(
+            {"Step": list(dr.breakdown["by_hand"]),
+             "Minutes": [f"{v:.0f}"
+                         for v in dr.breakdown["by_hand"].values()]}),
+            hide_index=True, width="stretch")
+    with b_right:
+        st.markdown("<div class='eyebrow'>With the tool</div>",
+                    unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(
+            {"Step": list(dr.breakdown["with_tool"]),
+             "Minutes": [f"{v:.0f}"
+                         for v in dr.breakdown["with_tool"].values()]}),
+            hide_index=True, width="stretch")
+
+    st.markdown("<div class='eyebrow'>Sensitivity</div>", unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame(ROI.deliverable_sensitivity(dbase)),
+                 hide_index=True, width="stretch")
+    st.caption("Three scenarios rather than one number, because a point "
+               "estimate invites an argument about the point instead of about "
+               "the shape. Every scenario is dominated by the same thing: the "
+               "artifacts are the volume, and the volume scales with "
+               "departments.")
+
+    st.markdown("---")
+    st.markdown("<div class='eyebrow'>The commentary, priced separately "
+                "&middot; instrumented from this run</div>",
+                unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Figures verified", f"{m.figures_per_commentary:.0f}",
               "per commentary", delta_color="off")
@@ -1925,14 +2198,41 @@ def _render_live_packet(A, packet):
         st.success(f"Saved {os.path.basename(path)}")
 
 
+def page_evidence():
+    """Proof it is worth something, and proof it does not fabricate.
+
+    Previously two tabs -- "ROI" and "Guardrails & Eval". Both were named for
+    what they contain rather than for the question a reader is asking, and
+    eight tabs is more than anyone gives a tool in ten minutes. Merged behind
+    the same mode selector the agent uses, with the questions as the labels.
+    """
+    st.markdown("<div class='eyebrow'>The proof</div>", unsafe_allow_html=True)
+    st.markdown("<div class='headline'>Evidence</div>", unsafe_allow_html=True)
+    st.markdown("<hr class='rule'/>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='color:#0F172A;font-size:0.92rem;line-height:1.5'>"
+        "Two questions worth asking of any tool that writes financial "
+        "commentary: <b>is it worth the time it claims to save</b>, and "
+        "<b>can it be shown not to make things up</b>. Both are answered "
+        "here with measurements rather than assertions.</div>",
+        unsafe_allow_html=True)
+
+    st.markdown("---")
+    mode = st.radio("Evidence",
+                    ["Time saved", "Proof it doesn't fabricate"],
+                    horizontal=True, label_visibility="collapsed")
+    if mode == "Time saved":
+        page_roi()
+    else:
+        page_eval()
+
+
 PAGES = {
     "Overview": page_overview,
     "Variance": page_variance,
     "Forecast": page_forecast,
     "Commentary": page_commentary,
     "Close-cycle agent": page_agent,
-    "Guardrails & Eval": page_eval,
-    "ROI": page_roi,
-    "Decision log": page_decisions,
+    "Evidence": page_evidence,
 }
 PAGES[page]()
