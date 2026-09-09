@@ -7,7 +7,7 @@ without ever trusting an AI-generated figure.
 
 Built on 100% synthetic Series C SaaS financials. No real-company data of any kind.
 
-**▶ [Live demo](https://ai-fpa-variance-copilot-ydenei544tse8dcgexffwv.streamlit.app)** — no login, no API key needed.
+**▶ [Live demo](https://fpa-variance-copilot.streamlit.app)** — no login, no API key needed.
 
 ---
 
